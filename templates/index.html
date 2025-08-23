@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서울시 따릉이 재배치 시스템</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .main-container {
+            padding: 2rem;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            transition: transform 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1rem;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        .navbar {
+            background: white !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 10px 30px;
+        }
+        .btn-primary:hover {
+            transform: scale(1.05);
+        }
+        .status-full {
+            color: #dc3545;
+        }
+        .status-empty {
+            color: #0d6efd;
+        }
+        .status-normal {
+            color: #198754;
+        }
+        .loading {
+            display: none;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-bicycle"></i> 서울시 따릉이 재배치 시스템
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">대시보드</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/map">실시간 지도</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/districts">구별 현황</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-container">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title text-center mb-4">
+                            <i class="fas fa-chart-line"></i> 실시간 현황
+                        </h2>
+                        <div class="text-center mb-3">
+                            <button class="btn btn-primary" onclick="loadData()">
+                                <i class="fas fa-sync-alt"></i> 데이터 새로고침
+                            </button>
+                        </div>
+                        
+                        <div class="loading text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">데이터를 불러오는 중...</p>
+                        </div>
+
+                        <div id="stats-container" class="row">
+                            <!-- 통계가 여기에 표시됩니다 -->
+                        </div>
+
+                        <div id="update-time" class="text-center text-muted mt-3">
+                            <!-- 업데이트 시간이 여기에 표시됩니다 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="card-title">
+                            <i class="fas fa-exclamation-triangle"></i> 재배치 우선순위 TOP 5
+                        </h3>
+                        <div id="priority-districts" class="table-responsive">
+                            <!-- 우선순위 구 목록이 여기에 표시됩니다 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="card-title">
+                            <i class="fas fa-map-marked-alt"></i> 빠른 지도 보기
+                        </h3>
+                        <p>실시간 따릉이 대여소 현황을 지도에서 확인하세요.</p>
+                        <a href="/map" class="btn btn-primary">
+                            <i class="fas fa-map"></i> 지도 보기
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="card-title">
+                            <i class="fas fa-list-alt"></i> 구별 상세 현황
+                        </h3>
+                        <p>각 구별 대여소 현황과 통계를 확인하세요.</p>
+                        <a href="/districts" class="btn btn-primary">
+                            <i class="fas fa-chart-bar"></i> 상세 보기
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function loadData() {
+            document.querySelector('.loading').style.display = 'block';
+            
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    updateStats(data);
+                    updatePriorityDistricts(data.stats);
+                    document.getElementById('update-time').innerHTML = 
+                        `<i class="fas fa-clock"></i> 마지막 업데이트: ${data.timestamp}`;
+                    document.querySelector('.loading').style.display = 'none';
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.querySelector('.loading').style.display = 'none';
+                    alert('데이터를 불러오는데 실패했습니다.');
+                });
+        }
+
+        function updateStats(data) {
+            let totalStations = 0;
+            let totalFull = 0;
+            let totalEmpty = 0;
+            let totalNormal = 0;
+
+            for (const district in data.stats) {
+                const stat = data.stats[district];
+                totalStations += stat.total;
+                totalFull += stat.full;
+                totalEmpty += stat.empty;
+                totalNormal += stat.normal;
+            }
+
+            const statsHtml = `
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number">${totalStations}</div>
+                        <div class="stat-label">전체 대여소</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number status-full">${totalFull}</div>
+                        <div class="stat-label">포화 대여소</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number status-empty">${totalEmpty}</div>
+                        <div class="stat-label">부족 대여소</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number status-normal">${totalNormal}</div>
+                        <div class="stat-label">정상 대여소</div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('stats-container').innerHTML = statsHtml;
+        }
+
+        function updatePriorityDistricts(stats) {
+            const districts = Object.entries(stats)
+                .sort((a, b) => b[1].urgency - a[1].urgency)
+                .slice(0, 5);
+
+            let tableHtml = `
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>순위</th>
+                            <th>구</th>
+                            <th>전체 대여소</th>
+                            <th>포화</th>
+                            <th>부족</th>
+                            <th>긴급도</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            districts.forEach((district, index) => {
+                const [name, stat] = district;
+                tableHtml += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td><strong>${name}</strong></td>
+                        <td>${stat.total}</td>
+                        <td class="status-full">${stat.full}</td>
+                        <td class="status-empty">${stat.empty}</td>
+                        <td>
+                            <span class="badge bg-danger">${stat.urgency}</span>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += '</tbody></table>';
+            document.getElementById('priority-districts').innerHTML = tableHtml;
+        }
+
+        // 페이지 로드 시 데이터 불러오기
+        window.onload = function() {
+            loadData();
+            // 5분마다 자동 새로고침
+            setInterval(loadData, 300000);
+        };
+    </script>
+</body>
+</html>
