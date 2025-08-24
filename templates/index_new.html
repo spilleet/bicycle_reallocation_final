@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서울 따릉이 재배치 시스템 2.0</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .animate-pulse-slow {
+            animation: pulse 3s ease-in-out infinite;
+        }
+        
+        .loader {
+            border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div x-data="bikeReallocationApp()" x-init="init()" x-cloak>
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-3xl font-bold flex items-center">
+                            <i class="fas fa-bicycle mr-3"></i>
+                            서울 따릉이 재배치 시스템
+                        </h1>
+                        <p class="text-purple-100 mt-1">AI 기반 최적 경로 계획 시스템</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-purple-100">마지막 업데이트</div>
+                        <div class="text-lg font-semibold" x-text="lastUpdate || '데이터 없음'"></div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="container mx-auto px-4 py-8">
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">총 구 수</p>
+                            <p class="text-3xl font-bold text-gray-800" x-text="statistics.total_districts || '-'"></p>
+                        </div>
+                        <div class="text-blue-500 text-3xl">
+                            <i class="fas fa-map-marked-alt"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">총 대여소</p>
+                            <p class="text-3xl font-bold text-gray-800" x-text="statistics.total_stations || '-'"></p>
+                        </div>
+                        <div class="text-green-500 text-3xl">
+                            <i class="fas fa-parking"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">수거 필요</p>
+                            <p class="text-3xl font-bold text-orange-600" x-text="statistics.total_pickup || '-'"></p>
+                        </div>
+                        <div class="text-orange-500 text-3xl">
+                            <i class="fas fa-arrow-up"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">배송 필요</p>
+                            <p class="text-3xl font-bold text-blue-600" x-text="statistics.total_delivery || '-'"></p>
+                        </div>
+                        <div class="text-blue-500 text-3xl">
+                            <i class="fas fa-arrow-down"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4 text-gray-800">
+                    <i class="fas fa-cog mr-2"></i>제어판
+                </h2>
+                
+                <div class="flex flex-wrap gap-4">
+                    <button @click="collectData()" 
+                            :disabled="loading.collect"
+                            class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <template x-if="!loading.collect">
+                            <span><i class="fas fa-sync-alt mr-2"></i>데이터 수집</span>
+                        </template>
+                        <template x-if="loading.collect">
+                            <span><i class="fas fa-spinner fa-spin mr-2"></i>수집 중...</span>
+                        </template>
+                    </button>
+                    
+                    <button @click="showStatistics()" 
+                            class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                        <i class="fas fa-chart-bar mr-2"></i>통계 보기
+                    </button>
+                    
+                    <button @click="exportData('json')" 
+                            class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                        <i class="fas fa-download mr-2"></i>JSON 내보내기
+                    </button>
+                    
+                    <button @click="exportData('csv')" 
+                            class="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition">
+                        <i class="fas fa-file-csv mr-2"></i>CSV 내보내기
+                    </button>
+                </div>
+            </div>
+
+            <!-- Main Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- District List -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h2 class="text-xl font-bold mb-4 text-gray-800">
+                            <i class="fas fa-list mr-2"></i>구별 현황
+                        </h2>
+                        
+                        <!-- Search -->
+                        <div class="mb-4">
+                            <input type="text" 
+                                   x-model="searchQuery"
+                                   placeholder="구 검색..."
+                                   class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        
+                        <!-- District List -->
+                        <div class="space-y-2 max-h-96 overflow-y-auto">
+                            <template x-for="district in filteredDistricts" :key="district.id">
+                                <div @click="selectDistrict(district)"
+                                     :class="{'bg-purple-50 border-purple-500': selectedDistrict?.id === district.id}"
+                                     class="p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h3 class="font-semibold text-gray-800" x-text="district.name"></h3>
+                                            <p class="text-sm text-gray-500">
+                                                대여소: <span x-text="district.total_stations"></span>개
+                                            </p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span :class="{
+                                                'text-red-600': district.urgency_score >= 20,
+                                                'text-orange-600': district.urgency_score >= 10 && district.urgency_score < 20,
+                                                'text-green-600': district.urgency_score < 10
+                                            }" class="text-2xl font-bold" x-text="district.urgency_score"></span>
+                                            <p class="text-xs text-gray-500">긴급도</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 flex gap-4 text-sm">
+                                        <span class="text-orange-600">
+                                            <i class="fas fa-arrow-up"></i> <span x-text="district.pickup_needed"></span>
+                                        </span>
+                                        <span class="text-blue-600">
+                                            <i class="fas fa-arrow-down"></i> <span x-text="district.delivery_needed"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map & Optimization -->
+                <div class="lg:col-span-2">
+                    <!-- Map -->
+                    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                        <h2 class="text-xl font-bold mb-4 text-gray-800">
+                            <i class="fas fa-map mr-2"></i>지도
+                        </h2>
+                        <div id="map" class="h-96 rounded-lg"></div>
+                    </div>
+
+                    <!-- Optimization Panel -->
+                    <div class="bg-white rounded-lg shadow-md p-6" x-show="selectedDistrict">
+                        <h2 class="text-xl font-bold mb-4 text-gray-800">
+                            <i class="fas fa-route mr-2"></i>최적화 설정
+                        </h2>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">트럭 수</label>
+                                <input type="number" 
+                                       x-model="optimizationParams.num_vehicles"
+                                       min="1" max="10"
+                                       class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">트럭 용량</label>
+                                <input type="number" 
+                                       x-model="optimizationParams.vehicle_capacity"
+                                       min="10" max="50"
+                                       class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="flex items-center">
+                                <input type="checkbox" 
+                                       x-model="optimizationParams.use_clustering"
+                                       class="mr-2">
+                                <span class="text-sm font-medium text-gray-700">클러스터링 사용 (대규모 문제에 권장)</span>
+                            </label>
+                        </div>
+                        
+                        <button @click="runOptimization()"
+                                :disabled="loading.optimize"
+                                class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            <template x-if="!loading.optimize">
+                                <span><i class="fas fa-calculator mr-2"></i>최적화 실행</span>
+                            </template>
+                            <template x-if="loading.optimize">
+                                <span><i class="fas fa-spinner fa-spin mr-2"></i>최적화 중...</span>
+                            </template>
+                        </button>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="bg-white rounded-lg shadow-md p-6 mt-6" x-show="optimizationResult">
+                        <h2 class="text-xl font-bold mb-4 text-gray-800">
+                            <i class="fas fa-clipboard-check mr-2"></i>최적화 결과
+                        </h2>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-sm text-gray-500">총 거리</p>
+                                <p class="text-2xl font-bold text-purple-600">
+                                    <span x-text="optimizationResult ? (optimizationResult.total_distance/1000).toFixed(2) : '-'"></span> km
+                                </p>
+                            </div>
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-sm text-gray-500">경로 수</p>
+                                <p class="text-2xl font-bold text-blue-600">
+                                    <span x-text="optimizationResult?.routes?.length || '-'"></span>개
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <template x-for="(route, index) in optimizationResult?.routes" :key="index">
+                                <div class="border rounded-lg overflow-hidden">
+                                    <div class="p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition"
+                                         @click="route.expanded = !route.expanded">
+                                        <div class="flex justify-between items-center">
+                                            <h3 class="font-semibold text-lg">
+                                                🚚 트럭 <span x-text="route.vehicle_id + 1"></span>
+                                                <span x-show="route.cluster_id" class="text-sm text-gray-500">
+                                                    (클러스터 <span x-text="route.cluster_id"></span>)
+                                                </span>
+                                            </h3>
+                                            <i class="fas fa-chevron-down transition-transform"
+                                               :class="{'rotate-180': route.expanded}"></i>
+                                        </div>
+                                        <div class="grid grid-cols-4 gap-2 mt-2 text-sm">
+                                            <div class="text-gray-600">
+                                                <i class="fas fa-route mr-1"></i>
+                                                거리: <span class="font-semibold" x-text="(route.distance/1000).toFixed(2)"></span>km
+                                            </div>
+                                            <div class="text-orange-600">
+                                                <i class="fas fa-arrow-up mr-1"></i>
+                                                수거: <span class="font-semibold" x-text="route.pickups"></span>대
+                                            </div>
+                                            <div class="text-blue-600">
+                                                <i class="fas fa-arrow-down mr-1"></i>
+                                                배송: <span class="font-semibold" x-text="route.deliveries"></span>대
+                                            </div>
+                                            <div class="text-purple-600">
+                                                <i class="fas fa-map-marker-alt mr-1"></i>
+                                                정류소: <span class="font-semibold" x-text="route.path.length"></span>개
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div x-show="route.expanded" 
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform -translate-y-2"
+                                         x-transition:enter-end="opacity-100 transform translate-y-0"
+                                         class="p-4 bg-white border-t">
+                                        <h4 class="font-semibold mb-3 text-gray-700">
+                                            <i class="fas fa-list-ol mr-2"></i>상세 경로
+                                        </h4>
+                                        <div class="space-y-2">
+                                            <template x-for="(stop, stopIndex) in route.path" :key="stopIndex">
+                                                <div class="flex items-start">
+                                                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                                                         :class="{
+                                                             'bg-green-500': stopIndex === 0,
+                                                             'bg-red-500': stopIndex === route.path.length - 1,
+                                                             'bg-orange-500': stopIndex > 0 && stopIndex < route.path.length - 1 && stop.pickup > 0,
+                                                             'bg-blue-500': stopIndex > 0 && stopIndex < route.path.length - 1 && stop.delivery > 0,
+                                                             'bg-gray-400': stopIndex > 0 && stopIndex < route.path.length - 1 && stop.pickup === 0 && stop.delivery === 0
+                                                         }">
+                                                        <span x-text="stopIndex + 1"></span>
+                                                    </div>
+                                                    <div class="ml-3 flex-grow">
+                                                        <div class="flex justify-between items-start">
+                                                            <div>
+                                                                <p class="font-medium text-gray-800" x-text="stop.name"></p>
+                                                                <div class="flex gap-4 mt-1 text-sm">
+                                                                    <span x-show="stop.pickup > 0" class="text-orange-600">
+                                                                        <i class="fas fa-arrow-up"></i> 수거: <span x-text="stop.pickup"></span>대
+                                                                    </span>
+                                                                    <span x-show="stop.delivery > 0" class="text-blue-600">
+                                                                        <i class="fas fa-arrow-down"></i> 배송: <span x-text="stop.delivery"></span>대
+                                                                    </span>
+                                                                    <span class="text-gray-500">
+                                                                        <i class="fas fa-bicycle"></i> 적재: <span x-text="stop.current_load"></span>대
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <button @click="showStopOnMap(stop)" 
+                                                                    class="text-purple-600 hover:text-purple-800 transition">
+                                                                <i class="fas fa-map-pin"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div x-show="stopIndex < route.path.length - 1" 
+                                                         class="absolute left-4 top-8 w-0.5 h-12 bg-gray-300"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        
+                                        <div class="mt-4 pt-4 border-t">
+                                            <button @click="highlightRoute(route, index)" 
+                                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition mr-2">
+                                                <i class="fas fa-eye mr-2"></i>경로 강조
+                                            </button>
+                                            <button @click="exportRoute(route, index)" 
+                                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                                                <i class="fas fa-download mr-2"></i>경로 내보내기
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="fixed bottom-4 right-4 z-50">
+            <template x-for="(toast, index) in toasts" :key="index">
+                <div x-show="toast.show"
+                     x-transition
+                     :class="{
+                         'bg-green-500': toast.type === 'success',
+                         'bg-red-500': toast.type === 'error',
+                         'bg-blue-500': toast.type === 'info'
+                     }"
+                     class="mb-2 px-6 py-3 text-white rounded-lg shadow-lg">
+                    <span x-text="toast.message"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function bikeReallocationApp() {
+            return {
+                // State
+                districts: [],
+                selectedDistrict: null,
+                optimizationResult: null,
+                statistics: {},
+                lastUpdate: null,
+                searchQuery: '',
+                map: null,
+                markers: [],
+                routes: [],
+                toasts: [],
+                
+                // Loading states
+                loading: {
+                    collect: false,
+                    optimize: false,
+                    export: false
+                },
+                
+                // Optimization parameters
+                optimizationParams: {
+                    num_vehicles: 2,
+                    vehicle_capacity: 20,
+                    use_clustering: true
+                },
+                
+                // Computed
+                get filteredDistricts() {
+                    if (!this.searchQuery) return this.districts;
+                    return this.districts.filter(d => 
+                        d.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+                    );
+                },
+                
+                // Methods
+                async init() {
+                    this.initMap();
+                    await this.loadInitialData();
+                },
+                
+                initMap() {
+                    this.map = L.map('map').setView([37.5665, 126.9780], 11);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }).addTo(this.map);
+                },
+                
+                async loadInitialData() {
+                    try {
+                        const response = await fetch('/api/statistics');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.statistics = data.data;
+                            this.lastUpdate = data.data.last_update ? 
+                                new Date(data.data.last_update).toLocaleString() : null;
+                        }
+                    } catch (error) {
+                        console.error('Failed to load initial data:', error);
+                    }
+                },
+                
+                async collectData() {
+                    this.loading.collect = true;
+                    try {
+                        const response = await fetch('/api/data/collect', {
+                            method: 'POST'
+                        });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.districts = data.data.districts;
+                            this.statistics = {
+                                total_districts: data.data.total_districts,
+                                total_stations: data.data.summary.total_stations,
+                                total_pickup: data.data.summary.total_pickup_needed,
+                                total_delivery: data.data.summary.total_delivery_needed
+                            };
+                            this.lastUpdate = new Date(data.data.timestamp).toLocaleString();
+                            this.showToast('데이터 수집 완료', 'success');
+                        } else {
+                            this.showToast('데이터 수집 실패: ' + data.error, 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('데이터 수집 중 오류 발생', 'error');
+                    } finally {
+                        this.loading.collect = false;
+                    }
+                },
+                
+                selectDistrict(district) {
+                    this.selectedDistrict = district;
+                    this.displayDistrictOnMap(district);
+                },
+                
+                displayDistrictOnMap(district) {
+                    // Clear existing markers
+                    this.markers.forEach(m => this.map.removeLayer(m));
+                    this.markers = [];
+                    
+                    // Add pickup stations
+                    district.pickup_stations?.forEach(station => {
+                        const marker = L.circleMarker([station.lat, station.lon], {
+                            radius: 6,
+                            fillColor: '#ff7800',
+                            color: '#fff',
+                            weight: 2,
+                            fillOpacity: 0.8
+                        }).addTo(this.map)
+                          .bindPopup(`<b>${station.name}</b><br>수거: ${station.pickup}대`);
+                        this.markers.push(marker);
+                    });
+                    
+                    // Add delivery stations
+                    district.delivery_stations?.forEach(station => {
+                        const marker = L.circleMarker([station.lat, station.lon], {
+                            radius: 6,
+                            fillColor: '#2196F3',
+                            color: '#fff',
+                            weight: 2,
+                            fillOpacity: 0.8
+                        }).addTo(this.map)
+                          .bindPopup(`<b>${station.name}</b><br>배송: ${station.delivery}대`);
+                        this.markers.push(marker);
+                    });
+                    
+                    // Fit bounds
+                    if (this.markers.length > 0) {
+                        const group = new L.featureGroup(this.markers);
+                        this.map.fitBounds(group.getBounds().pad(0.1));
+                    }
+                },
+                
+                async runOptimization() {
+                    if (!this.selectedDistrict) {
+                        this.showToast('먼저 구를 선택해주세요', 'info');
+                        return;
+                    }
+                    
+                    this.loading.optimize = true;
+                    try {
+                        const response = await fetch('/api/optimize', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                district_id: this.selectedDistrict.id,
+                                ...this.optimizationParams
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.optimizationResult = data.data;
+                            this.displayRoutesOnMap(data.data.routes);
+                            this.showToast('최적화 완료', 'success');
+                        } else {
+                            this.showToast('최적화 실패: ' + data.error, 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('최적화 중 오류 발생', 'error');
+                    } finally {
+                        this.loading.optimize = false;
+                    }
+                },
+                
+                displayRoutesOnMap(routes) {
+                    // Clear existing routes and markers
+                    this.routes.forEach(r => this.map.removeLayer(r));
+                    this.routes = [];
+                    this.markers.forEach(m => this.map.removeLayer(m));
+                    this.markers = [];
+                    
+                    const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+                    
+                    routes.forEach((route, index) => {
+                        const color = colors[index % colors.length];
+                        const coordinates = route.path.map(p => [p.lat, p.lon]);
+                        
+                        // Draw route line
+                        const polyline = L.polyline(coordinates, {
+                            color: color,
+                            weight: 4,
+                            opacity: 0.7,
+                            smoothFactor: 1
+                        }).addTo(this.map);
+                        
+                        // Add markers for each stop
+                        route.path.forEach((stop, stopIndex) => {
+                            let icon, popupContent;
+                            
+                            if (stopIndex === 0) {
+                                // Start point (depot)
+                                icon = L.divIcon({
+                                    html: `<div style="background-color: ${color}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">S</div>`,
+                                    iconSize: [30, 30],
+                                    iconAnchor: [15, 15]
+                                });
+                                popupContent = `<b>🏢 ${stop.name}</b><br>출발지`;
+                            } else if (stopIndex === route.path.length - 1) {
+                                // End point (depot)
+                                icon = L.divIcon({
+                                    html: `<div style="background-color: ${color}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">E</div>`,
+                                    iconSize: [30, 30],
+                                    iconAnchor: [15, 15]
+                                });
+                                popupContent = `<b>🏢 ${stop.name}</b><br>도착지`;
+                            } else {
+                                // Regular stop
+                                const bgColor = stop.pickup > 0 ? '#ff7800' : '#2196F3';
+                                icon = L.divIcon({
+                                    html: `<div style="background-color: ${bgColor}; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">${stopIndex}</div>`,
+                                    iconSize: [24, 24],
+                                    iconAnchor: [12, 12]
+                                });
+                                popupContent = `
+                                    <b>${stop.name}</b><br>
+                                    <div style="margin-top: 5px;">
+                                        ${stop.pickup > 0 ? `🔺 수거: ${stop.pickup}대<br>` : ''}
+                                        ${stop.delivery > 0 ? `🔻 배송: ${stop.delivery}대<br>` : ''}
+                                        🚲 적재량: ${stop.current_load}대
+                                    </div>
+                                `;
+                            }
+                            
+                            const marker = L.marker([stop.lat, stop.lon], { icon })
+                                .bindPopup(popupContent)
+                                .addTo(this.map);
+                            
+                            this.markers.push(marker);
+                        });
+                        
+                        // Add route number label
+                        const midPoint = Math.floor(coordinates.length / 2);
+                        const labelIcon = L.divIcon({
+                            html: `<div style="background-color: white; color: ${color}; padding: 2px 6px; border-radius: 10px; font-weight: bold; border: 2px solid ${color}; font-size: 12px;">트럭 ${index + 1}</div>`,
+                            iconSize: [60, 20],
+                            iconAnchor: [30, 10]
+                        });
+                        
+                        const labelMarker = L.marker(coordinates[midPoint], { icon: labelIcon })
+                            .addTo(this.map);
+                        
+                        this.routes.push(polyline);
+                        this.markers.push(labelMarker);
+                    });
+                    
+                    // Fit map to show all routes
+                    if (this.routes.length > 0) {
+                        const group = new L.featureGroup([...this.routes, ...this.markers]);
+                        this.map.fitBounds(group.getBounds().pad(0.1));
+                    }
+                },
+                
+                highlightRoute(route, index) {
+                    // Clear existing highlights
+                    this.routes.forEach(r => {
+                        r.setStyle({ opacity: 0.3, weight: 3 });
+                    });
+                    
+                    // Highlight selected route
+                    if (this.routes[index]) {
+                        this.routes[index].setStyle({ opacity: 1, weight: 6 });
+                        this.routes[index].bringToFront();
+                    }
+                    
+                    // Zoom to route
+                    const coordinates = route.path.map(p => [p.lat, p.lon]);
+                    const bounds = L.latLngBounds(coordinates);
+                    this.map.fitBounds(bounds.pad(0.1));
+                    
+                    this.showToast(`트럭 ${index + 1} 경로가 강조되었습니다`, 'info');
+                },
+                
+                showStopOnMap(stop) {
+                    this.map.setView([stop.lat, stop.lon], 16);
+                    
+                    // Find and open popup for this stop
+                    this.markers.forEach(marker => {
+                        const pos = marker.getLatLng();
+                        if (Math.abs(pos.lat - stop.lat) < 0.0001 && Math.abs(pos.lng - stop.lon) < 0.0001) {
+                            marker.openPopup();
+                        }
+                    });
+                },
+                
+                exportRoute(route, index) {
+                    // Create CSV content
+                    let csvContent = "순서,정류소명,수거,배송,적재량,위도,경도\n";
+                    route.path.forEach((stop, i) => {
+                        csvContent += `${i + 1},"${stop.name}",${stop.pickup},${stop.delivery},${stop.current_load},${stop.lat},${stop.lon}\n`;
+                    });
+                    
+                    // Create download link
+                    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `truck_${index + 1}_route.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    this.showToast(`트럭 ${index + 1} 경로가 내보내졌습니다`, 'success');
+                },
+                
+                async showStatistics() {
+                    try {
+                        const response = await fetch('/api/statistics');
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.statistics = data.data;
+                            this.showToast('통계 업데이트 완료', 'success');
+                        }
+                    } catch (error) {
+                        this.showToast('통계 로드 실패', 'error');
+                    }
+                },
+                
+                async exportData(format) {
+                    window.location.href = `/api/export/${format}`;
+                },
+                
+                showToast(message, type = 'info') {
+                    const toast = {
+                        message,
+                        type,
+                        show: true
+                    };
+                    
+                    this.toasts.push(toast);
+                    
+                    setTimeout(() => {
+                        toast.show = false;
+                        setTimeout(() => {
+                            this.toasts = this.toasts.filter(t => t !== toast);
+                        }, 500);
+                    }, 3000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

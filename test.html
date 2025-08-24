@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Optimization</title>
+</head>
+<body>
+    <h1>Testing Optimization API</h1>
+    <button onclick="collectData()">1. Collect Data</button>
+    <button onclick="optimize()">2. Optimize</button>
+    <div id="results"></div>
+    
+    <script>
+        let districts = [];
+        
+        async function collectData() {
+            const response = await fetch('http://localhost:8080/api/data/collect', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            console.log('Data collection response:', data);
+            
+            if (data.success) {
+                districts = data.data.districts;
+                document.getElementById('results').innerHTML = `<pre>Found ${districts.length} districts</pre>`;
+            }
+        }
+        
+        async function optimize() {
+            // Find a district with problems
+            const urgent = districts.find(d => d.pickup_needed > 0 || d.delivery_needed > 0);
+            if (!urgent) {
+                alert('No districts need optimization');
+                return;
+            }
+            
+            console.log('Optimizing district:', urgent);
+            
+            const response = await fetch('http://localhost:8080/api/optimize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    district_id: urgent.id,
+                    num_vehicles: 2,
+                    vehicle_capacity: 20,
+                    use_clustering: false
+                })
+            });
+            
+            const data = await response.json();
+            console.log('Optimization response:', data);
+            
+            if (data.success && data.data.routes) {
+                let html = '<h2>Routes:</h2>';
+                data.data.routes.forEach((route, i) => {
+                    html += `<h3>Route ${i}:</h3>`;
+                    html += `<ul>`;
+                    if (route.path) {
+                        route.path.forEach(stop => {
+                            html += `<li>${stop.name} (${stop.lat}, ${stop.lon})</li>`;
+                        });
+                    }
+                    html += `</ul>`;
+                });
+                document.getElementById('results').innerHTML = html;
+            }
+        }
+    </script>
+</body>
+</html>

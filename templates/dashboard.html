@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서울 따릉이 재배치 대시보드</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+        
+        .loader {
+            border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        
+        .leaflet-routing-container {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        
+        .route-animation {
+            animation: dash 20s linear infinite;
+        }
+        
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div x-data="dashboardApp()" x-init="init()" x-cloak class="min-h-screen">
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg sticky top-0 z-40">
+            <div class="container mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-bicycle text-3xl"></i>
+                        <div>
+                            <h1 class="text-2xl font-bold">서울 따릉이 재배치 시스템</h1>
+                            <p class="text-purple-100 text-sm">실시간 최적화 대시보드</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="text-right">
+                            <div class="text-xs text-purple-200">마지막 업데이트</div>
+                            <div class="font-semibold" x-text="lastUpdate || '-'"></div>
+                        </div>
+                        <button @click="toggleFullscreen()" 
+                                class="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="container-fluid mx-auto p-4">
+            <div class="grid grid-cols-12 gap-4">
+                <!-- Left Sidebar - Control Panel & Districts -->
+                <div class="col-span-12 lg:col-span-3">
+                    <!-- Quick Actions -->
+                    <div class="bg-white rounded-xl shadow-md p-4 mb-4">
+                        <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-bolt text-yellow-500 mr-2"></i>
+                            빠른 실행
+                        </h3>
+                        <div class="space-y-2">
+                            <button @click="collectData()" 
+                                    :disabled="loading.collect"
+                                    class="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50">
+                                <i class="fas fa-sync-alt mr-2" :class="{'fa-spin': loading.collect}"></i>
+                                데이터 수집
+                            </button>
+                            <button @click="autoOptimize()" 
+                                    :disabled="!selectedDistrict"
+                                    class="w-full px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition disabled:opacity-50">
+                                <i class="fas fa-magic mr-2"></i>
+                                자동 최적화
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Statistics Summary -->
+                    <div class="bg-white rounded-xl shadow-md p-4 mb-4">
+                        <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-chart-line text-green-500 mr-2"></i>
+                            실시간 현황
+                        </h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="text-center p-2 bg-blue-50 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600" x-text="statistics.total_stations || '-'"></div>
+                                <div class="text-xs text-gray-600">전체 대여소</div>
+                            </div>
+                            <div class="text-center p-2 bg-orange-50 rounded-lg">
+                                <div class="text-2xl font-bold text-orange-600" x-text="statistics.total_pickup || '-'"></div>
+                                <div class="text-xs text-gray-600">수거 필요</div>
+                            </div>
+                            <div class="text-center p-2 bg-green-50 rounded-lg">
+                                <div class="text-2xl font-bold text-green-600" x-text="statistics.total_delivery || '-'"></div>
+                                <div class="text-xs text-gray-600">배송 필요</div>
+                            </div>
+                            <div class="text-center p-2 bg-purple-50 rounded-lg">
+                                <div class="text-2xl font-bold text-purple-600" x-text="statistics.total_districts || '-'"></div>
+                                <div class="text-xs text-gray-600">활성 구</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- District List -->
+                    <div class="bg-white rounded-xl shadow-md p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <i class="fas fa-map-marked-alt text-purple-500 mr-2"></i>
+                                구별 현황
+                            </h3>
+                            <select x-model="sortBy" @change="sortDistricts()"
+                                    class="text-sm px-2 py-1 border rounded-lg">
+                                <option value="urgency">긴급도순</option>
+                                <option value="name">이름순</option>
+                                <option value="stations">대여소순</option>
+                            </select>
+                        </div>
+                        
+                        <input type="text" 
+                               x-model="searchQuery"
+                               placeholder="구 검색..."
+                               class="w-full px-3 py-2 border rounded-lg mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        
+                        <div class="space-y-2 max-h-96 overflow-y-auto">
+                            <template x-for="district in filteredDistricts" :key="district.id">
+                                <div @click="selectDistrict(district)"
+                                     :class="{'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400': selectedDistrict?.id === district.id}"
+                                     class="p-3 border rounded-lg cursor-pointer hover:shadow-md transition-all">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <div class="font-semibold text-gray-800" x-text="district.name"></div>
+                                            <div class="text-xs text-gray-500 mt-1">
+                                                <span class="inline-flex items-center">
+                                                    <i class="fas fa-store text-gray-400 mr-1"></i>
+                                                    <span x-text="district.total_stations"></span>개
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="relative">
+                                                <span :class="{
+                                                    'text-red-600': district.urgency_score >= 20,
+                                                    'text-orange-500': district.urgency_score >= 10 && district.urgency_score < 20,
+                                                    'text-green-500': district.urgency_score < 10
+                                                }" class="text-xl font-bold" x-text="district.urgency_score"></span>
+                                                <div class="text-xs text-gray-400">긴급도</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 flex justify-between text-xs">
+                                        <span class="text-orange-500">
+                                            <i class="fas fa-arrow-up"></i> <span x-text="district.pickup_needed"></span>
+                                        </span>
+                                        <span class="text-blue-500">
+                                            <i class="fas fa-arrow-down"></i> <span x-text="district.delivery_needed"></span>
+                                        </span>
+                                        <span class="text-purple-500">
+                                            <i class="fas fa-balance-scale"></i> <span x-text="district.total_imbalance"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Center - Map -->
+                <div class="col-span-12 lg:col-span-6">
+                    <div class="bg-white rounded-xl shadow-md p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-bold text-gray-800">
+                                <i class="fas fa-map text-blue-500 mr-2"></i>
+                                실시간 지도
+                            </h3>
+                            <div class="flex space-x-2">
+                                <button @click="resetMap()" 
+                                        class="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                                        title="초기 위치로">
+                                    <i class="fas fa-home"></i>
+                                </button>
+                                <button @click="toggleMapStyle()" 
+                                        class="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                                        title="지도 스타일 변경">
+                                    <i class="fas fa-layer-group"></i>
+                                </button>
+                                <button @click="fitAllRoutes()" 
+                                        x-show="optimizationResult"
+                                        class="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm"
+                                        title="전체 경로 보기">
+                                    <i class="fas fa-expand-arrows-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="map" class="rounded-lg border border-gray-200"></div>
+                        
+                        <!-- Map Legend -->
+                        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded">
+                                <i class="fas fa-circle text-green-500"></i> 출발/도착
+                            </span>
+                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded">
+                                <i class="fas fa-circle text-orange-500"></i> 수거
+                            </span>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                <i class="fas fa-circle text-blue-500"></i> 배송
+                            </span>
+                            <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                <i class="fas fa-route"></i> 경로
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Sidebar - Optimization & Results -->
+                <div class="col-span-12 lg:col-span-3">
+                    <!-- Optimization Settings -->
+                    <div class="bg-white rounded-xl shadow-md p-4 mb-4" x-show="selectedDistrict">
+                        <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-cogs text-blue-500 mr-2"></i>
+                            최적화 설정
+                        </h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-sm text-gray-600">선택된 구</label>
+                                <div class="font-semibold text-gray-800" x-text="selectedDistrict?.name"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-xs text-gray-600">트럭 수</label>
+                                    <input type="number" 
+                                           x-model="optimizationParams.num_vehicles"
+                                           min="1" max="10"
+                                           class="w-full px-2 py-1 border rounded text-sm">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-600">용량(대)</label>
+                                    <input type="number" 
+                                           x-model="optimizationParams.vehicle_capacity"
+                                           min="10" max="50"
+                                           class="w-full px-2 py-1 border rounded text-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="flex items-center text-sm">
+                                    <input type="checkbox" 
+                                           x-model="optimizationParams.use_clustering"
+                                           class="mr-2">
+                                    <span>클러스터링 사용</span>
+                                </label>
+                            </div>
+                            <button @click="runOptimization()"
+                                    :disabled="loading.optimize"
+                                    class="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-lg hover:from-green-700 hover:to-teal-700 transition disabled:opacity-50">
+                                <i class="fas fa-play mr-2" :class="{'fa-spin fa-spinner': loading.optimize}"></i>
+                                최적화 실행
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Debug Button -->
+                    <div class="bg-white rounded-xl shadow-md p-4 mb-4" x-show="optimizationResult">
+                        <button @click="() => { console.log('Manual display test'); console.log('Routes:', optimizationResult.routes); displayRoutesOnMap(optimizationResult.routes); }"
+                                class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            <i class="fas fa-map-marked-alt mr-2"></i>
+                            수동으로 경로 표시 (디버그)
+                        </button>
+                    </div>
+
+                    <!-- Optimization Results -->
+                    <div class="bg-white rounded-xl shadow-md p-4" x-show="optimizationResult">
+                        <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-trophy text-yellow-500 mr-2"></i>
+                            최적화 결과
+                        </h3>
+                        
+                        <!-- Summary Stats -->
+                        <div class="grid grid-cols-2 gap-2 mb-4">
+                            <div class="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg">
+                                <div class="text-2xl font-bold gradient-text">
+                                    <span x-text="optimizationResult ? (optimizationResult.total_distance/1000).toFixed(1) : '-'"></span>
+                                </div>
+                                <div class="text-xs text-gray-600">총 거리(km)</div>
+                            </div>
+                            <div class="text-center p-3 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600">
+                                    <span x-text="optimizationResult?.routes?.length || '-'"></span>
+                                </div>
+                                <div class="text-xs text-gray-600">활성 트럭</div>
+                            </div>
+                        </div>
+
+                        <!-- Route Details -->
+                        <div class="space-y-2 max-h-96 overflow-y-auto">
+                            <template x-for="(route, index) in optimizationResult?.routes" :key="index">
+                                <div class="border rounded-lg overflow-hidden">
+                                    <div @click="route.expanded = !route.expanded"
+                                         class="p-3 bg-gray-50 hover:bg-gray-100 cursor-pointer transition">
+                                        <div class="flex justify-between items-center">
+                                            <div class="flex items-center">
+                                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                     :style="`background-color: ${getRouteColor(index)}`">
+                                                    <span x-text="index + 1"></span>
+                                                </div>
+                                                <span class="ml-2 font-semibold">트럭 <span x-text="index + 1"></span></span>
+                                            </div>
+                                            <i class="fas fa-chevron-down transition-transform text-gray-400"
+                                               :class="{'rotate-180': route.expanded}"></i>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 mt-2 text-xs">
+                                            <div>
+                                                <i class="fas fa-route text-gray-400"></i>
+                                                <span x-text="(route.distance/1000).toFixed(1)"></span>km
+                                            </div>
+                                            <div>
+                                                <i class="fas fa-arrow-up text-orange-400"></i>
+                                                <span x-text="route.pickups"></span>대
+                                            </div>
+                                            <div>
+                                                <i class="fas fa-arrow-down text-blue-400"></i>
+                                                <span x-text="route.deliveries"></span>대
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div x-show="route.expanded" 
+                                         x-transition
+                                         class="p-3 bg-white border-t">
+                                        <div class="space-y-1 text-xs">
+                                            <template x-for="(stop, stopIndex) in route.path" :key="stopIndex">
+                                                <div class="flex items-center py-1">
+                                                    <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs"
+                                                         :class="{
+                                                             'bg-green-500': stopIndex === 0 || stopIndex === route.path.length - 1,
+                                                             'bg-orange-500': stop.pickup > 0,
+                                                             'bg-blue-500': stop.delivery > 0,
+                                                             'bg-gray-400': stop.pickup === 0 && stop.delivery === 0 && stopIndex !== 0 && stopIndex !== route.path.length - 1
+                                                         }">
+                                                        <span x-text="stopIndex + 1"></span>
+                                                    </div>
+                                                    <div class="ml-2 flex-grow">
+                                                        <span x-text="stop.name"></span>
+                                                        <span class="text-gray-500 ml-1">
+                                                            <template x-if="stop.pickup > 0">
+                                                                <span class="text-orange-500">↑<span x-text="stop.pickup"></span></span>
+                                                            </template>
+                                                            <template x-if="stop.delivery > 0">
+                                                                <span class="text-blue-500">↓<span x-text="stop.delivery"></span></span>
+                                                            </template>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div class="mt-3 pt-3 border-t flex gap-2">
+                                            <button @click="focusRoute(route, index)" 
+                                                    class="flex-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200">
+                                                <i class="fas fa-eye"></i> 보기
+                                            </button>
+                                            <button @click="exportRoute(route, index)" 
+                                                    class="flex-1 px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200">
+                                                <i class="fas fa-download"></i> 내보내기
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="fixed bottom-4 right-4 z-50 space-y-2">
+            <template x-for="toast in toasts" :key="toast.id">
+                <div x-transition:enter="transition ease-out duration-300"
+                     x-transition:enter-start="opacity-0 transform translate-x-full"
+                     x-transition:enter-end="opacity-100 transform translate-x-0"
+                     x-transition:leave="transition ease-in duration-200"
+                     x-transition:leave-start="opacity-100 transform translate-x-0"
+                     x-transition:leave-end="opacity-0 transform translate-x-full"
+                     :class="{
+                         'bg-green-500': toast.type === 'success',
+                         'bg-red-500': toast.type === 'error',
+                         'bg-blue-500': toast.type === 'info',
+                         'bg-yellow-500': toast.type === 'warning'
+                     }"
+                     class="px-4 py-3 text-white rounded-lg shadow-lg flex items-center min-w-[250px] max-w-[400px]">
+                    <i class="fas mr-2"
+                       :class="{
+                           'fa-check-circle': toast.type === 'success',
+                           'fa-exclamation-circle': toast.type === 'error',
+                           'fa-info-circle': toast.type === 'info',
+                           'fa-exclamation-triangle': toast.type === 'warning'
+                       }"></i>
+                    <span x-text="toast.message" class="flex-1"></span>
+                    <button @click="toasts = toasts.filter(t => t.id !== toast.id)"
+                            class="ml-3 hover:opacity-75">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function dashboardApp() {
+            return {
+                // State
+                districts: [],
+                selectedDistrict: null,
+                optimizationResult: null,
+                statistics: {},
+                lastUpdate: null,
+                searchQuery: '',
+                sortBy: 'urgency',
+                map: null,
+                markers: [],
+                routes: [],
+                routeLayers: [],
+                toasts: [],
+                mapStyle: 'street',
+                
+                // Loading states
+                loading: {
+                    collect: false,
+                    optimize: false
+                },
+                
+                // Optimization parameters
+                optimizationParams: {
+                    num_vehicles: 2,
+                    vehicle_capacity: 20,
+                    use_clustering: true
+                },
+                
+                // Colors for routes
+                routeColors: ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'],
+                
+                // Computed
+                get filteredDistricts() {
+                    let filtered = this.districts;
+                    
+                    if (this.searchQuery) {
+                        filtered = filtered.filter(d => 
+                            d.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+                        );
+                    }
+                    
+                    return filtered;
+                },
+                
+                // Methods
+                async init() {
+                    // Wait for DOM to be ready
+                    await this.$nextTick();
+                    setTimeout(() => {
+                        this.initMap();
+                        this.loadInitialData();
+                        this.startAutoRefresh();
+                    }, 100);
+                },
+                
+                initMap() {
+                    // Check if map container exists
+                    const mapContainer = document.getElementById('map');
+                    if (!mapContainer) {
+                        console.error('Map container not found');
+                        return;
+                    }
+                    
+                    // Initialize map with Seoul center
+                    this.map = L.map('map', {
+                        center: [37.5665, 126.9780],
+                        zoom: 11,
+                        zoomControl: true,
+                        attributionControl: true
+                    });
+                    
+                    // Add tile layer
+                    this.tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors',
+                        maxZoom: 19
+                    }).addTo(this.map);
+                    
+                    // Add scale control
+                    L.control.scale().addTo(this.map);
+                    
+                    // Force a resize to ensure proper rendering
+                    setTimeout(() => {
+                        this.map.invalidateSize();
+                    }, 200);
+                },
+                
+                updateMapStyle() {
+                    if (this.tileLayer) {
+                        this.map.removeLayer(this.tileLayer);
+                    }
+                    
+                    const styles = {
+                        street: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                    };
+                    
+                    this.tileLayer = L.tileLayer(styles[this.mapStyle], {
+                        attribution: '© OpenStreetMap contributors',
+                        maxZoom: 19
+                    }).addTo(this.map);
+                },
+                
+                toggleMapStyle() {
+                    this.mapStyle = this.mapStyle === 'street' ? 'satellite' : 'street';
+                    this.updateMapStyle();
+                },
+                
+                resetMap() {
+                    this.map.setView([37.5665, 126.9780], 11);
+                },
+                
+                async loadInitialData() {
+                    try {
+                        const response = await fetch('/api/statistics');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.statistics = data.data;
+                            this.lastUpdate = data.data.last_update ? 
+                                new Date(data.data.last_update).toLocaleTimeString() : null;
+                        }
+                    } catch (error) {
+                        console.error('Failed to load initial data:', error);
+                    }
+                },
+                
+                startAutoRefresh() {
+                    setInterval(() => {
+                        if (!this.loading.collect) {
+                            this.loadInitialData();
+                        }
+                    }, 60000); // Refresh every minute
+                },
+                
+                async collectData() {
+                    this.loading.collect = true;
+                    try {
+                        const response = await fetch('/api/data/collect', {
+                            method: 'POST'
+                        });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.districts = data.data.districts;
+                            this.statistics = {
+                                total_districts: data.data.total_districts,
+                                total_stations: data.data.summary.total_stations,
+                                total_pickup: data.data.summary.total_pickup_needed,
+                                total_delivery: data.data.summary.total_delivery_needed
+                            };
+                            this.lastUpdate = new Date().toLocaleTimeString();
+                            this.sortDistricts();
+                            this.showToast('데이터 수집 완료', 'success');
+                        } else {
+                            this.showToast('데이터 수집 실패', 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('오류 발생', 'error');
+                    } finally {
+                        this.loading.collect = false;
+                    }
+                },
+                
+                sortDistricts() {
+                    switch(this.sortBy) {
+                        case 'name':
+                            this.districts.sort((a, b) => a.name.localeCompare(b.name));
+                            break;
+                        case 'stations':
+                            this.districts.sort((a, b) => b.total_stations - a.total_stations);
+                            break;
+                        case 'urgency':
+                        default:
+                            this.districts.sort((a, b) => b.urgency_score - a.urgency_score);
+                    }
+                },
+                
+                selectDistrict(district) {
+                    this.selectedDistrict = district;
+                    this.displayDistrictOnMap(district);
+                },
+                
+                displayDistrictOnMap(district) {
+                    // Clear existing markers and routes when selecting new district
+                    this.clearMapLayers();
+                    
+                    // Add station markers
+                    district.pickup_stations?.forEach(station => {
+                        const marker = L.circleMarker([station.lat, station.lon], {
+                            radius: 8,
+                            fillColor: '#ff7800',
+                            color: '#fff',
+                            weight: 2,
+                            fillOpacity: 0.8
+                        }).addTo(this.map)
+                          .bindPopup(`<b>${station.name}</b><br>수거: ${station.pickup}대`);
+                        this.markers.push(marker);
+                    });
+                    
+                    district.delivery_stations?.forEach(station => {
+                        const marker = L.circleMarker([station.lat, station.lon], {
+                            radius: 8,
+                            fillColor: '#2196F3',
+                            color: '#fff',
+                            weight: 2,
+                            fillOpacity: 0.8
+                        }).addTo(this.map)
+                          .bindPopup(`<b>${station.name}</b><br>배송: ${station.delivery}대`);
+                        this.markers.push(marker);
+                    });
+                    
+                    // Fit bounds
+                    if (this.markers.length > 0) {
+                        const group = new L.featureGroup(this.markers);
+                        this.map.fitBounds(group.getBounds().pad(0.1));
+                    }
+                    
+                    // Clear previous optimization result when selecting new district
+                    this.optimizationResult = null;
+                },
+                
+                async runOptimization() {
+                    if (!this.selectedDistrict) {
+                        this.showToast('먼저 구를 선택해주세요', 'info');
+                        return;
+                    }
+                    
+                    this.loading.optimize = true;
+                    try {
+                        const response = await fetch('/api/optimize', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                district_id: this.selectedDistrict.id,
+                                ...this.optimizationParams
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        console.log('Optimization response:', data);  // Debug log
+                        
+                        if (data.success) {
+                            this.optimizationResult = data.data;
+                            console.log('Optimization result set:', this.optimizationResult);  // Debug log
+                            console.log('Routes in result:', this.optimizationResult.routes);  // Debug log
+                            
+                            // Initialize expanded property for each route
+                            if (this.optimizationResult.routes) {
+                                this.optimizationResult.routes.forEach((route, idx) => {
+                                    route.expanded = false;
+                                    console.log(`Route ${idx} path length:`, route.path ? route.path.length : 0);
+                                    if (route.path && route.path.length > 0) {
+                                        console.log(`Route ${idx} first stop:`, route.path[0]);
+                                    }
+                                });
+                            }
+                            
+                            // Display routes on map immediately after optimization
+                            // Use nextTick to ensure Alpine has updated the DOM
+                            this.$nextTick(() => {
+                                setTimeout(() => {
+                                    console.log('Calling displayRoutesOnMap with:', this.optimizationResult.routes);
+                                    if (this.optimizationResult && this.optimizationResult.routes) {
+                                        this.displayRoutesOnMap(this.optimizationResult.routes);
+                                    } else {
+                                        console.error('Routes not available after optimization');
+                                    }
+                                }, 200);
+                            });
+                            
+                            this.showToast('최적화 완료! 지도에 경로가 표시됩니다.', 'success');
+                        } else {
+                            this.showToast('최적화 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Optimization error:', error);
+                        this.showToast('오류 발생: ' + error.message, 'error');
+                    } finally {
+                        this.loading.optimize = false;
+                    }
+                },
+                
+                async autoOptimize() {
+                    if (!this.selectedDistrict) {
+                        this.showToast('먼저 구를 선택해주세요', 'info');
+                        return;
+                    }
+                    
+                    // Auto-calculate optimal vehicles based on urgency
+                    const urgency = this.selectedDistrict.urgency_score;
+                    this.optimizationParams.num_vehicles = Math.min(Math.ceil(urgency / 10), 5);
+                    this.optimizationParams.vehicle_capacity = 20;
+                    this.optimizationParams.use_clustering = urgency > 30;
+                    
+                    await this.runOptimization();
+                },
+                
+                displayRoutesOnMap(routes) {
+                    if (!this.map) {
+                        console.error('Map not initialized');
+                        this.showToast('지도가 초기화되지 않았습니다', 'error');
+                        return;
+                    }
+                    
+                    if (!routes || routes.length === 0) {
+                        console.log('No routes to display');
+                        this.showToast('표시할 경로가 없습니다', 'warning');
+                        return;
+                    }
+                    
+                    console.log(`Displaying ${routes.length} routes on map`);
+                    console.log('Routes data:', JSON.stringify(routes));  // Debug log
+                    this.clearMapLayers();
+                    
+                    // Process each route
+                    routes.forEach((route, index) => {
+                        if (!route.path || route.path.length === 0) {
+                            console.warn(`Route ${index} has no path`);
+                            return;
+                        }
+                        
+                        console.log(`Route ${index} path:`, route.path);  // Debug log
+                        
+                        const color = this.routeColors[index % this.routeColors.length];
+                        const coordinates = [];
+                        
+                        // Validate and collect coordinates
+                        route.path.forEach((p, idx) => {
+                            if (p && p.lat !== undefined && p.lon !== undefined) {
+                                const lat = parseFloat(p.lat);
+                                const lon = parseFloat(p.lon);
+                                if (!isNaN(lat) && !isNaN(lon)) {
+                                    coordinates.push([lat, lon]);
+                                    console.log(`Point ${idx}: [${lat}, ${lon}]`);  // Debug log
+                                } else {
+                                    console.warn(`Invalid coordinates at index ${idx}:`, p);
+                                }
+                            } else {
+                                console.warn(`Missing lat/lon at index ${idx}:`, p);
+                            }
+                        });
+                        
+                        console.log(`Route ${index} has ${coordinates.length} valid coordinates`);  // Debug log
+                        
+                        if (coordinates.length < 2) {
+                            console.warn(`Route ${index} has insufficient coordinates: ${coordinates.length}`);
+                            return;
+                        }
+                        
+                        // Create background line (white border effect)
+                        const backgroundLine = L.polyline(coordinates, {
+                            color: 'white',
+                            weight: 8,
+                            opacity: 1,
+                            smoothFactor: 1
+                        }).addTo(this.map);
+                        
+                        // Create main route line (navigation style)
+                        const mainLine = L.polyline(coordinates, {
+                            color: color,
+                            weight: 5,
+                            opacity: 0.9,
+                            smoothFactor: 1,
+                            dashArray: '10, 10',
+                            className: 'route-animation'
+                        }).addTo(this.map);
+                        
+                        // Add START marker
+                        if (coordinates.length > 0) {
+                            const startIcon = L.divIcon({
+                                html: `
+                                    <div style="position: relative;">
+                                        <div style="background: ${color}; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 4px solid #4CAF50; box-shadow: 0 3px 10px rgba(0,0,0,0.4); font-size: 14px;">🚚</div>
+                                        <div style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); background: ${color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">트럭 ${index + 1}</div>
+                                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid ${color};"></div>
+                                    </div>
+                                `,
+                                iconSize: [36, 44],
+                                iconAnchor: [18, 44],
+                                className: 'start-marker'
+                            });
+                            
+                            const startMarker = L.marker(coordinates[0], { icon: startIcon })
+                                .bindPopup(`<b>🚚 트럭 ${index + 1} 출발지</b><br>${route.path[0].name || '차고지'}`)
+                                .addTo(this.map);
+                            this.markers.push(startMarker);
+                        }
+                        
+                        // Add END marker
+                        if (coordinates.length > 1) {
+                            const endIcon = L.divIcon({
+                                html: `
+                                    <div style="position: relative;">
+                                        <div style="background: ${color}; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 4px solid #F44336; box-shadow: 0 3px 10px rgba(0,0,0,0.4); font-size: 14px;">🏁</div>
+                                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid ${color};"></div>
+                                    </div>
+                                `,
+                                iconSize: [36, 44],
+                                iconAnchor: [18, 44],
+                                className: 'end-marker'
+                            });
+                            
+                            const endMarker = L.marker(coordinates[coordinates.length - 1], { icon: endIcon })
+                                .bindPopup(`<b>🏁 트럭 ${index + 1} 도착지</b><br>${route.path[route.path.length - 1].name || '차고지'}`)
+                                .addTo(this.map);
+                            this.markers.push(endMarker);
+                        }
+                        
+                        // Add waypoint markers (numbered stops) with route color
+                        route.path.forEach((stop, stopIndex) => {
+                            // Skip first and last (already marked as start/end)
+                            if (stopIndex === 0 || stopIndex === route.path.length - 1) return;
+                            
+                            const isPickup = stop.pickup > 0;
+                            const icon = isPickup ? '↗️' : '↘️';
+                            const actionText = isPickup ? `수거 ${stop.pickup}대` : `배송 ${stop.delivery}대`;
+                            
+                            // Use the same color as the route for consistency
+                            const waypointIcon = L.divIcon({
+                                html: `
+                                    <div style="position: relative;">
+                                        <div style="background: ${color}; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 3px 10px rgba(0,0,0,0.4); font-size: 14px;">${icon}</div>
+                                        <div style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); background: ${color}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold; white-space: nowrap;">${stopIndex}</div>
+                                    </div>
+                                `,
+                                iconSize: [32, 32],
+                                iconAnchor: [16, 16],
+                                className: 'waypoint-marker'
+                            });
+                            
+                            const waypointMarker = L.marker([parseFloat(stop.lat), parseFloat(stop.lon)], { icon: waypointIcon })
+                                .bindPopup(`
+                                    <div style="min-width: 200px;">
+                                        <b>🚚 트럭 ${index + 1} - 정류소 ${stopIndex}</b><br>
+                                        <b>${stop.name}</b><br>
+                                        <div style="margin-top: 5px; padding: 5px; background: ${color}20; border-left: 3px solid ${color};">
+                                            ${isPickup ? '↗️ 수거' : '↘️ 배송'}: ${actionText}<br>
+                                            🚲 현재 적재: ${stop.current_load}대
+                                        </div>
+                                    </div>
+                                `)
+                                .addTo(this.map);
+                            this.markers.push(waypointMarker);
+                        });
+                        
+                        // Add direction arrows on the route
+                        const totalSegments = coordinates.length - 1;
+                        const arrowInterval = Math.max(1, Math.floor(totalSegments / 5));
+                        
+                        for (let i = arrowInterval; i < totalSegments; i += arrowInterval) {
+                            const start = coordinates[i];
+                            const end = coordinates[i + 1];
+                            const angle = Math.atan2(end[1] - start[1], end[0] - start[0]) * 180 / Math.PI;
+                            
+                            // Calculate midpoint for arrow placement
+                            const midLat = (start[0] + end[0]) / 2;
+                            const midLon = (start[1] + end[1]) / 2;
+                            
+                            const arrowIcon = L.divIcon({
+                                html: `<div style="color: ${color}; font-size: 20px; transform: rotate(${angle}deg); text-shadow: 0 0 3px white;">➤</div>`,
+                                iconSize: [20, 20],
+                                iconAnchor: [10, 10],
+                                className: 'direction-arrow'
+                            });
+                            
+                            const arrowMarker = L.marker([midLat, midLon], { icon: arrowIcon }).addTo(this.map);
+                            this.markers.push(arrowMarker);
+                        }
+                        
+                        // Add route info label
+                        const midIdx = Math.floor(coordinates.length / 2);
+                        const routeLabelIcon = L.divIcon({
+                            html: `
+                                <div style="background: linear-gradient(135deg, ${color} 0%, ${color}dd 100%); color: white; padding: 4px 10px; border-radius: 15px; font-weight: bold; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                                    🚚 트럭 ${index + 1} | ${route.distance ? (route.distance/1000).toFixed(1) + 'km' : ''}
+                                </div>
+                            `,
+                            iconSize: [100, 30],
+                            iconAnchor: [50, 15],
+                            className: 'route-info-label'
+                        });
+                        
+                        const routeLabelMarker = L.marker(coordinates[midIdx], { icon: routeLabelIcon }).addTo(this.map);
+                        this.markers.push(routeLabelMarker);
+                        
+                        this.routeLayers.push({ 
+                            polyline: mainLine,
+                            backgroundLine: backgroundLine,
+                            markers: [] 
+                        });
+                    });
+                    
+                    // Zoom to fit all routes
+                    setTimeout(() => {
+                        if (this.routeLayers.length > 0) {
+                            const group = new L.featureGroup(
+                                this.routeLayers.map(l => l.polyline).concat(this.markers)
+                            );
+                            this.map.fitBounds(group.getBounds().pad(0.1));
+                        }
+                        
+                        this.showToast(`${routes.length}개 경로를 지도에 표시했습니다`, 'success');
+                    }, 300);
+                },
+                
+                createPopupContent(stop, index, total) {
+                    let content = `<div style="min-width: 150px;">`;
+                    content += `<b>${stop.name}</b><br>`;
+                    
+                    if (index === 0 || index === total - 1) {
+                        content += `<span class="text-green-600">🏢 차고지</span>`;
+                    } else {
+                        if (stop.pickup > 0) {
+                            content += `<span class="text-orange-600">↑ 수거: ${stop.pickup}대</span><br>`;
+                        }
+                        if (stop.delivery > 0) {
+                            content += `<span class="text-blue-600">↓ 배송: ${stop.delivery}대</span><br>`;
+                        }
+                        content += `<span class="text-gray-600">적재: ${stop.current_load}대</span>`;
+                    }
+                    
+                    content += `</div>`;
+                    return content;
+                },
+                
+                clearMapLayers() {
+                    if (!this.map) return;
+                    
+                    this.markers.forEach(m => {
+                        try {
+                            this.map.removeLayer(m);
+                        } catch (e) {}
+                    });
+                    this.markers = [];
+                    
+                    this.routeLayers.forEach(layer => {
+                        try {
+                            if (layer.polyline) this.map.removeLayer(layer.polyline);
+                            if (layer.backgroundLine) this.map.removeLayer(layer.backgroundLine);
+                            if (layer.decorator) this.map.removeLayer(layer.decorator);
+                        } catch (e) {}
+                    });
+                    this.routeLayers = [];
+                },
+                
+                focusRoute(route, index) {
+                    console.log('focusRoute called for route:', index, route);
+                    console.log('Current routeLayers:', this.routeLayers);
+                    
+                    // First check if routes are displayed, if not display them
+                    if (!this.routeLayers || this.routeLayers.length === 0) {
+                        console.log('No route layers found, attempting to display routes');
+                        if (this.optimizationResult && this.optimizationResult.routes) {
+                            console.log('Found optimization result with routes, displaying now');
+                            this.displayRoutesOnMap(this.optimizationResult.routes);
+                        } else {
+                            console.log('No optimization result or routes found');
+                        }
+                    }
+                    
+                    const coordinates = route.path.map(p => [p.lat, p.lon]);
+                    const bounds = L.latLngBounds(coordinates);
+                    this.map.fitBounds(bounds.pad(0.1));
+                    
+                    // Highlight the selected route
+                    this.routeLayers.forEach((layer, i) => {
+                        if (layer.polyline) {
+                            if (i === index) {
+                                layer.polyline.setStyle({
+                                    opacity: 1,
+                                    weight: 6
+                                });
+                                layer.polyline.bringToFront();
+                            } else {
+                                layer.polyline.setStyle({
+                                    opacity: 0.3,
+                                    weight: 3
+                                });
+                            }
+                        }
+                    });
+                    
+                    this.showToast(`트럭 ${index + 1} 경로를 표시합니다`, 'info');
+                },
+                
+                fitAllRoutes() {
+                    if (this.markers.length > 0 || this.routeLayers.length > 0) {
+                        const allLayers = [];
+                        this.markers.forEach(m => allLayers.push(m));
+                        this.routeLayers.forEach(l => {
+                            if (l.polyline) allLayers.push(l.polyline);
+                        });
+                        
+                        if (allLayers.length > 0) {
+                            const group = new L.featureGroup(allLayers);
+                            this.map.fitBounds(group.getBounds().pad(0.1));
+                        }
+                    }
+                    
+                    // Reset all routes to normal style
+                    this.routeLayers.forEach(layer => {
+                        if (layer.polyline) {
+                            layer.polyline.setStyle({
+                                opacity: 0.7,
+                                weight: 4
+                            });
+                        }
+                    });
+                },
+                
+                exportRoute(route, index) {
+                    let csvContent = "순서,정류소명,수거,배송,적재량,위도,경도\n";
+                    route.path.forEach((stop, i) => {
+                        csvContent += `${i + 1},"${stop.name}",${stop.pickup},${stop.delivery},${stop.current_load},${stop.lat},${stop.lon}\n`;
+                    });
+                    
+                    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `truck_${index + 1}_route.csv`;
+                    link.click();
+                    
+                    this.showToast('경로 내보내기 완료', 'success');
+                },
+                
+                getRouteColor(index) {
+                    return this.routeColors[index % this.routeColors.length];
+                },
+                
+                toggleFullscreen() {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                    } else {
+                        document.exitFullscreen();
+                    }
+                },
+                
+                showToast(message, type = 'info') {
+                    const toast = {
+                        id: Date.now() + Math.random(),  // 고유 ID 추가
+                        message,
+                        type,
+                        show: true
+                    };
+                    
+                    this.toasts.push(toast);
+                    
+                    // 3초 후 자동으로 사라지게 설정
+                    setTimeout(() => {
+                        const index = this.toasts.findIndex(t => t.id === toast.id);
+                        if (index !== -1) {
+                            this.toasts.splice(index, 1);
+                        }
+                    }, 3000);  // 3초 후 사라짐
+                }
+            }
+        };
+    </script>
+</body>
+</html>

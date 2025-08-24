@@ -376,6 +376,9 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
     print(f"{'='*70}")
     print(f"📌 문제 크기: {len(problem_stations)}개 대여소")
     
+    # Debug: Check if stations have coordinates
+    print(f"\n[DEBUG] First station data: {problem_stations[0] if problem_stations else 'No stations'}")
+    
     # 노드 수가 적으면 클러스터링 없이 직접 처리
     if len(problem_stations) <= 30:
         print("  → 소규모 문제: 클러스터링 없이 직접 최적화")
@@ -397,6 +400,7 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
             continue
         
         print(f"\n📦 클러스터 {i+1}/{len(clusters)} 처리 중...")
+        print(f"[DEBUG] Cluster {i+1} has {len(cluster_stations)} stations")
         
         # 단일 트럭으로 클러스터 해결
         solution = solve_single_cluster_with_ortools(
@@ -429,6 +433,10 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
     
     if not stations:
         return None
+    
+    print(f"[DEBUG] solve_single_cluster_with_ortools called with {len(stations)} stations")
+    if stations:
+        print(f"[DEBUG] First station: {stations[0]}")
     
     # 문제 실행 가능성 체크
     total_pickup = sum(s.get('pickup', 0) for s in stations)
@@ -580,6 +588,10 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
 def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles):
     """OR-Tools 솔루션에서 경로 정보를 추출합니다"""
     
+    print(f"[DEBUG] extract_solution: {len(nodes)} nodes")
+    if nodes:
+        print(f"[DEBUG] First node: name={nodes[0].get('name')}, lat={nodes[0].get('lat')}, lon={nodes[0].get('lon')}")
+    
     routes = []
     total_distance = 0
     
@@ -603,12 +615,16 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
             delivery = deliveries[node_index]
             current_load += pickup - delivery
             
-            route['path'].append({
-                'name': node['name'],
+            stop = {
+                'name': node.get('name', f'Station_{node_index}'),
+                'lat': node.get('lat', 37.5665),
+                'lon': node.get('lon', 126.9780),
                 'pickup': pickup,
                 'delivery': delivery,
                 'current_load': current_load
-            })
+            }
+            print(f"[DEBUG] Adding stop: {stop['name']} at ({stop['lat']}, {stop['lon']})")
+            route['path'].append(stop)
             
             route['pickups'] += pickup
             route['deliveries'] += delivery
@@ -617,9 +633,13 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
             index = solution.Value(routing.NextVar(index))
             route['distance'] += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
         
+        # Add final depot
         node_index = manager.IndexToNode(index)
+        final_node = nodes[node_index]
         route['path'].append({
-            'name': nodes[node_index]['name'],
+            'name': final_node.get('name', 'Depot'),
+            'lat': final_node.get('lat', 37.5665),
+            'lon': final_node.get('lon', 126.9780),
             'pickup': 0,
             'delivery': 0,
             'current_load': current_load
@@ -637,116 +657,87 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
 # ---------------------------------------------------------------------------
 # 7. 휴리스틱 솔버 (개선 - 거리 계산 추가)
 # ---------------------------------------------------------------------------
-def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot=None):
-    """대규모 문제를 위한 휴리스틱 해법 (거리 계산 포함)"""
-    
-    # depot이 없으면 구의 중심점 사용
-    if depot is None:
-        classifier = SeoulDistrictClassifier()
-        actual_district = district_name.split('_')[0] if '_' in district_name else district_name
-        if actual_district in classifier.district_centers:
-            depot_lat, depot_lon = classifier.district_centers[actual_district]
-        else:
-            depot_lat = np.mean([s['lat'] for s in stations]) if stations else 37.5665
-            depot_lon = np.mean([s['lon'] for s in stations]) if stations else 126.9780
-        
-        depot = {
-            'name': f'{actual_district} 차고지',
-            'lat': depot_lat,
-            'lon': depot_lon
-        }
-    
-    # Haversine 거리 계산 함수
-    def calculate_distance(lat1, lon1, lat2, lon2):
+def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot):
+    """'최단 근접 이웃' 기반의 휴리스틱 해법"""
+
+    def haversine_km(lat1, lon1, lat2, lon2):
         R = 6371
         phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c * 1000  # 미터 단위
-    
-    pickup_stations = [s for s in stations if s.get('pickup', 0) > 0]
-    delivery_stations = [s for s in stations if s.get('delivery', 0) > 0]
-    
-    pickup_stations.sort(key=lambda x: x.get('pickup', 0), reverse=True)
-    delivery_stations.sort(key=lambda x: x.get('delivery', 0), reverse=True)
-    
+        d_phi = math.radians(lat2 - lat1)
+        d_lambda = math.radians(lon2 - lon1)
+        a = math.sin(d_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(d_lambda/2)**2
+        return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
+
     routes = []
     total_distance = 0
+    unvisited_stations = stations[:]
     
     for vehicle_id in range(num_vehicles):
         route = {
-            'vehicle_id': vehicle_id,
-            'path': [{'name': depot['name'], 'pickup': 0, 'delivery': 0, 'current_load': 0}],
-            'distance': 0,
-            'pickups': 0,
-            'deliveries': 0
+            'vehicle_id': vehicle_id, 'path': [], 'distance': 0,
+            'pickups': 0, 'deliveries': 0
         }
         
+        current_pos = {'lat': depot['lat'], 'lon': depot['lon']}
         current_load = 0
-        current_lat, current_lon = depot['lat'], depot['lon']
-        
-        # 수거 작업
-        for station in pickup_stations[vehicle_id::num_vehicles]:
-            if current_load + station['pickup'] <= vehicle_capacity:
-                # 거리 계산 및 누적
-                dist = calculate_distance(current_lat, current_lon, station['lat'], station['lon'])
-                route['distance'] += dist
-                
-                current_load += station['pickup']
-                current_lat, current_lon = station['lat'], station['lon']
-                
-                route['path'].append({
-                    'name': station['name'],
-                    'pickup': station['pickup'],
-                    'delivery': 0,
-                    'current_load': current_load
-                })
-                route['pickups'] += station['pickup']
-        
-        # 배송 작업
-        for station in delivery_stations[vehicle_id::num_vehicles]:
-            if current_load >= station['delivery']:
-                # 거리 계산 및 누적
-                dist = calculate_distance(current_lat, current_lon, station['lat'], station['lon'])
-                route['distance'] += dist
-                
-                current_load -= station['delivery']
-                current_lat, current_lon = station['lat'], station['lon']
-                
-                route['path'].append({
-                    'name': station['name'],
-                    'pickup': 0,
-                    'delivery': station['delivery'],
-                    'current_load': current_load
-                })
-                route['deliveries'] += station['delivery']
-        
-        # 차고지 복귀 거리 추가
-        if len(route['path']) > 1:  # 실제 작업이 있었다면
-            dist = calculate_distance(current_lat, current_lon, depot['lat'], depot['lon'])
-            route['distance'] += dist
         
         route['path'].append({
-            'name': depot['name'],
-            'pickup': 0,
-            'delivery': 0,
-            'current_load': current_load
+            'name': depot['name'], 'lat': depot['lat'], 'lon': depot['lon'],
+            'pickup': 0, 'delivery': 0, 'current_load': current_load
+        })
+        
+        # 가장 가까운 정류소부터 방문하는 로직
+        while True:
+            # 방문 가능한 후보 정류소 찾기
+            candidates = []
+            for s in unvisited_stations:
+                is_pickup = s.get('pickup', 0) > 0
+                # 용량 제약 조건 확인
+                if (is_pickup and current_load + s['pickup'] <= vehicle_capacity) or \
+                   (not is_pickup and current_load >= s['delivery']):
+                    dist = haversine_km(current_pos['lat'], current_pos['lon'], s['lat'], s['lon'])
+                    candidates.append((dist, s))
+            
+            # 더 이상 방문할 곳이 없으면 종료
+            if not candidates:
+                break
+                
+            # 가장 가까운 정류소 선택
+            best_dist, next_station = min(candidates, key=lambda x: x[0])
+            
+            # 경로에 추가
+            pickup = next_station.get('pickup', 0)
+            delivery = next_station.get('delivery', 0)
+            current_load += pickup - delivery
+            
+            route['path'].append({
+                'name': next_station['name'], 'lat': next_station['lat'], 'lon': next_station['lon'],
+                'pickup': pickup, 'delivery': delivery, 'current_load': current_load
+            })
+            
+            route['distance'] += best_dist * 1000 # 미터로 변환
+            route['pickups'] += pickup
+            route['deliveries'] += delivery
+            
+            # 현재 위치 업데이트 및 방문 목록에서 제거
+            current_pos = {'lat': next_station['lat'], 'lon': next_station['lon']}
+            unvisited_stations.remove(next_station)
+
+        # 차고지로 복귀
+        dist_to_depot = haversine_km(current_pos['lat'], current_pos['lon'], depot['lat'], depot['lon'])
+        route['distance'] += dist_to_depot * 1000
+        
+        route['path'].append({
+            'name': depot['name'], 'lat': depot['lat'], 'lon': depot['lon'],
+            'pickup': 0, 'delivery': 0, 'current_load': current_load
         })
         
         if len(route['path']) > 2:
             routes.append(route)
             total_distance += route['distance']
-    
-    print(f"  ✅ 휴리스틱으로 경로 생성 완료")
-    
-    return {
-        'routes': routes, 
-        'total_distance': total_distance,
-        'method': 'Heuristic'
-    }
 
+    print(f"  ✅ 휴리스틱(최단 근접)으로 경로 생성 완료")
+    return {'routes': routes, 'total_distance': total_distance, 'method': 'Heuristic'}
 # ---------------------------------------------------------------------------
 # 8. 결과 출력 (개선)
 # ---------------------------------------------------------------------------
