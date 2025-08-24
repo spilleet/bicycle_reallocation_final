@@ -5,24 +5,24 @@ import time
 from collections import defaultdict
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
-from shapely.geometry import Point, shape
 import numpy as np
 from datetime import datetime
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
 
 # ---------------------------------------------------------------------------
-# 1. GeoJSON 기반 구 분류기
+# 1. GeoJSON 기반 구 분류기 (기존 코드 유지)
 # ---------------------------------------------------------------------------
 class SeoulDistrictClassifier:
     """서울시 구 분류기 (GeoJSON 활용)"""
-    #생성자/객체의 초기 상태 설정 
     def __init__(self):
         self.district_polygons = {}
         self.load_geojson()
     
     def load_geojson(self):
         """GeoJSON 데이터 로드 (온라인 또는 로컬)"""
-        # 실제 서비스에서는 정확한 GeoJSON 파일 사용
-        # 여기서는 간소화된 경계 박스 사용
         self.district_bounds = {
             '강남구': {'min_lat': 37.4687, 'max_lat': 37.5687, 'min_lon': 127.0164, 'max_lon': 127.0964},
             '강동구': {'min_lat': 37.5201, 'max_lat': 37.5501, 'min_lon': 127.1138, 'max_lon': 127.1438},
@@ -51,7 +51,6 @@ class SeoulDistrictClassifier:
             '중랑구': {'min_lat': 37.5963, 'max_lat': 37.6263, 'min_lon': 127.0825, 'max_lon': 127.1125}
         }
         
-        # 구 중심점 (가장 가까운 구 찾기용)
         self.district_centers = {
             '강남구': (37.5172, 127.0473), '강동구': (37.5301, 127.1238),
             '강북구': (37.6396, 127.0257), '강서구': (37.5509, 126.8495),
@@ -70,13 +69,11 @@ class SeoulDistrictClassifier:
     
     def find_district(self, lat, lon):
         """좌표가 속한 구를 찾습니다"""
-        # 경계 박스 체크
         for district, bounds in self.district_bounds.items():
             if (bounds['min_lat'] <= lat <= bounds['max_lat'] and 
                 bounds['min_lon'] <= lon <= bounds['max_lon']):
                 return district
         
-        # 가장 가까운 구 찾기
         min_distance = float('inf')
         closest_district = None
         
@@ -89,7 +86,159 @@ class SeoulDistrictClassifier:
         return closest_district
 
 # ---------------------------------------------------------------------------
-# 2. 데이터 수집 및 구별 분류
+# 🆕 2. 클러스터링 모듈
+# ---------------------------------------------------------------------------
+class BikeStationClusterer:
+    """따릉이 대여소 클러스터링"""
+    
+    def __init__(self, num_vehicles=3):
+        self.num_vehicles = num_vehicles
+        self.clusters = {}
+        
+    def create_balanced_clusters(self, stations):
+        """작업량 균형을 고려한 클러스터 생성"""
+        
+        # 수거/배송 필요 대여소 분리
+        pickup_stations = []
+        delivery_stations = []
+        
+        for station in stations:
+            if station.get('pickup', 0) > 0:
+                pickup_stations.append(station)
+            elif station.get('delivery', 0) > 0:
+                delivery_stations.append(station)
+        
+        print(f"\n📊 클러스터링 시작:")
+        print(f"  - 수거 필요: {len(pickup_stations)}개")
+        print(f"  - 배송 필요: {len(delivery_stations)}개")
+        print(f"  - 트럭 수: {self.num_vehicles}대")
+        
+        # 1차 클러스터링: 수거/배송 별도
+        pickup_clusters = self._kmeans_clustering(
+            pickup_stations, 
+            n_clusters=min(self.num_vehicles, len(pickup_stations))
+        ) if pickup_stations else {}
+        
+        delivery_clusters = self._kmeans_clustering(
+            delivery_stations,
+            n_clusters=min(self.num_vehicles, len(delivery_stations))
+        ) if delivery_stations else {}
+        
+        # 2차 클러스터링: 인접 클러스터 병합
+        final_clusters = self._merge_clusters(pickup_clusters, delivery_clusters)
+        
+        return final_clusters
+    
+    def _kmeans_clustering(self, stations, n_clusters):
+        """K-means 클러스터링 수행"""
+        if not stations or n_clusters == 0:
+            return {}
+            
+        # 좌표와 작업량을 특징으로 사용
+        features = []
+        for station in stations:
+            features.append([
+                station['lat'],
+                station['lon'],
+                station.get('pickup', 0) + station.get('delivery', 0)  # 작업량
+            ])
+        
+        # 정규화
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+        
+        # K-means 클러스터링
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(features_scaled)
+        
+        # 클러스터별로 스테이션 그룹화
+        clusters = defaultdict(list)
+        for station, label in zip(stations, labels):
+            clusters[label].append(station)
+        
+        return dict(clusters)
+    
+    def _merge_clusters(self, pickup_clusters, delivery_clusters):
+        """수거/배송 클러스터를 지리적 근접성 기반으로 병합"""
+        final_clusters = []
+        
+        # 각 클러스터의 중심점 계산
+        pickup_centers = {}
+        for idx, stations in pickup_clusters.items():
+            if stations:
+                avg_lat = np.mean([s['lat'] for s in stations])
+                avg_lon = np.mean([s['lon'] for s in stations])
+                pickup_centers[f'pickup_{idx}'] = {
+                    'center': (avg_lat, avg_lon),
+                    'stations': stations
+                }
+        
+        delivery_centers = {}
+        for idx, stations in delivery_clusters.items():
+            if stations:
+                avg_lat = np.mean([s['lat'] for s in stations])
+                avg_lon = np.mean([s['lon'] for s in stations])
+                delivery_centers[f'delivery_{idx}'] = {
+                    'center': (avg_lat, avg_lon),
+                    'stations': stations
+                }
+        
+        # 가장 가까운 수거/배송 클러스터 페어링
+        used_delivery = set()
+        
+        for pickup_key, pickup_data in pickup_centers.items():
+            cluster_stations = pickup_data['stations'].copy()
+            
+            # 가장 가까운 배송 클러스터 찾기
+            min_dist = float('inf')
+            closest_delivery = None
+            
+            for delivery_key, delivery_data in delivery_centers.items():
+                if delivery_key not in used_delivery:
+                    dist = self._calculate_distance(
+                        pickup_data['center'][0], pickup_data['center'][1],
+                        delivery_data['center'][0], delivery_data['center'][1]
+                    )
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_delivery = delivery_key
+            
+            if closest_delivery:
+                cluster_stations.extend(delivery_centers[closest_delivery]['stations'])
+                used_delivery.add(closest_delivery)
+            
+            final_clusters.append(cluster_stations)
+        
+        # 페어링되지 않은 배송 클러스터 추가
+        for delivery_key, delivery_data in delivery_centers.items():
+            if delivery_key not in used_delivery:
+                final_clusters.append(delivery_data['stations'])
+        
+        # 빈 클러스터가 있으면 트럭 수에 맞게 조정
+        while len(final_clusters) < self.num_vehicles:
+            final_clusters.append([])
+        
+        print(f"\n✅ 클러스터링 완료: {len(final_clusters)}개 클러스터 생성")
+        for i, cluster in enumerate(final_clusters):
+            if cluster:
+                pickup_count = sum(1 for s in cluster if s.get('pickup', 0) > 0)
+                delivery_count = sum(1 for s in cluster if s.get('delivery', 0) > 0)
+                print(f"  클러스터 {i+1}: 총 {len(cluster)}개 (수거 {pickup_count}, 배송 {delivery_count})")
+        
+        return final_clusters
+    
+    def _calculate_distance(self, lat1, lon1, lat2, lon2):
+        """두 지점 간 거리 계산 (km)"""
+        R = 6371
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return R * c
+
+# ---------------------------------------------------------------------------
+# 3. 데이터 수집 및 구별 분류 (기존 코드 유지)
 # ---------------------------------------------------------------------------
 def get_bike_station_data_by_district(api_key):
     """따릉이 데이터를 수집하고 구별로 분류합니다"""
@@ -98,7 +247,6 @@ def get_bike_station_data_by_district(api_key):
     print("STEP 1: 데이터 수집 및 구별 분류")
     print("="*70)
     
-    # 데이터 수집
     all_stations = []
     for start_index in [1, 1001, 2001]:
         end_index = start_index + 999
@@ -113,11 +261,9 @@ def get_bike_station_data_by_district(api_key):
     
     print(f"✓ 총 {len(all_stations)}개 대여소 데이터 수집 완료")
     
-    # 구 분류기 초기화
     classifier = SeoulDistrictClassifier()
-    
-    # 구별 분류
     district_stations = defaultdict(list)
+    
     for station in all_stations:
         try:
             lat = float(station['stationLatitude'])
@@ -132,14 +278,13 @@ def get_bike_station_data_by_district(api_key):
     
     print(f"✓ {len(district_stations)}개 구로 분류 완료")
     
-    # 구별 통계
     for district, stations in sorted(district_stations.items()):
         print(f"  - {district}: {len(stations)}개 대여소")
     
     return district_stations
 
 # ---------------------------------------------------------------------------
-# 3. 구별 재배치 분석
+# 4. 구별 재배치 분석 (기존 코드 유지)
 # ---------------------------------------------------------------------------
 def analyze_district_redistribution_needs(district_stations):
     """구별 재배치 필요도를 분석합니다"""
@@ -164,7 +309,7 @@ def analyze_district_redistribution_needs(district_stations):
                     continue
                 
                 occupancy = int(station['shared'])
-                target = racks * 0.7  # 목표: 70%
+                target = racks * 0.7
                 imbalance = bikes - target
                 
                 station_info = {
@@ -177,15 +322,15 @@ def analyze_district_redistribution_needs(district_stations):
                     'occupancy': occupancy,
                     'imbalance': abs(imbalance)
                 }
-                # 수거/배송 필요량 계산
-                if occupancy >= 130:  # 수거 필요
-                    station_info['pickup'] = min(int(imbalance), 10) # 최대 10대 수거
+                
+                if occupancy >= 130:
+                    station_info['pickup'] = min(int(imbalance), 10)
                     station_info['delivery'] = 0
                     pickup_needed.append(station_info)
                     total_imbalance += station_info['pickup']
-                elif occupancy <= 30:  # 배송 필요
+                elif occupancy <= 30:
                     station_info['pickup'] = 0
-                    station_info['delivery'] = min(int(abs(imbalance)), 10) # 최대 10대 배송
+                    station_info['delivery'] = min(int(abs(imbalance)), 10)
                     delivery_needed.append(station_info)
                     total_imbalance += station_info['delivery']
                     
@@ -197,10 +342,9 @@ def analyze_district_redistribution_needs(district_stations):
             'pickup_needed': pickup_needed,
             'delivery_needed': delivery_needed,
             'total_imbalance': total_imbalance,
-            'urgency_score': len(pickup_needed) + len(delivery_needed) #수거가 필요한 대여소의 총개수와 배송이 필요한 대여소의 총개수를 합산하여 만든다 
+            'urgency_score': len(pickup_needed) + len(delivery_needed)
         }
     
-    # 우선순위 출력
     sorted_districts = sorted(district_analysis.items(), 
                             key=lambda x: x[1]['urgency_score'], 
                             reverse=True)
@@ -217,40 +361,125 @@ def analyze_district_redistribution_needs(district_stations):
     return district_analysis
 
 # ---------------------------------------------------------------------------
-# 4. OR-Tools를 사용한 구별 최적 경로 계산
+# 🆕 5. 클러스터 기반 OR-Tools 최적화
 # ---------------------------------------------------------------------------
-def solve_district_with_ortools(district_name, analysis, num_vehicles=2, vehicle_capacity=20):
-    """특정 구의 재배치 경로를 OR-Tools로 최적화합니다"""
+def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehicle_capacity=20):
+    """클러스터링 기반 구별 재배치 최적화"""
     
-    # 재배치 필요 대여소 추출
     problem_stations = analysis['pickup_needed'] + analysis['delivery_needed']
     
     if len(problem_stations) == 0:
         return None
     
-    print(f"\n{district_name} 최적화 중...")
-    print(f"  - 문제 크기: {len(problem_stations)}개 대여소")
+    print(f"\n{'='*70}")
+    print(f"🚀 {district_name} 클러스터링 기반 최적화")
+    print(f"{'='*70}")
+    print(f"📌 문제 크기: {len(problem_stations)}개 대여소")
     
-    # 차고지 설정 (구 중심부)
+    # 노드 수가 적으면 클러스터링 없이 직접 처리
+    if len(problem_stations) <= 30:
+        print("  → 소규모 문제: 클러스터링 없이 직접 최적화")
+        return solve_single_cluster_with_ortools(
+            district_name, problem_stations, num_vehicles, vehicle_capacity
+        )
+    
+    # 클러스터링 수행
+    clusterer = BikeStationClusterer(num_vehicles)
+    clusters = clusterer.create_balanced_clusters(problem_stations)
+    
+    # 각 클러스터별로 OR-Tools 적용
+    all_routes = []
+    total_distance = 0
+    solution_methods = []  # 각 클러스터의 해결 방법 기록
+    
+    for i, cluster_stations in enumerate(clusters):
+        if not cluster_stations:
+            continue
+        
+        print(f"\n📦 클러스터 {i+1}/{len(clusters)} 처리 중...")
+        
+        # 단일 트럭으로 클러스터 해결
+        solution = solve_single_cluster_with_ortools(
+            district_name,  # 구 이름을 전달하여 올바른 차고지 사용
+            cluster_stations,
+            num_vehicles=1,  # 각 클러스터는 1대의 트럭이 담당
+            vehicle_capacity=vehicle_capacity,
+            cluster_id=i+1  # 클러스터 ID 전달
+        )
+        
+        if solution and solution['routes']:
+            # 트럭 ID 조정
+            for route in solution['routes']:
+                route['vehicle_id'] = i
+                route['cluster_id'] = i+1
+            all_routes.extend(solution['routes'])
+            total_distance += solution.get('total_distance', 0)
+            solution_methods.append(solution.get('method', 'Unknown'))
+    
+    return {
+        'routes': all_routes,
+        'total_distance': total_distance,
+        'clustering_used': True,
+        'num_clusters': len(clusters),
+        'solution_methods': solution_methods
+    }
+
+def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, vehicle_capacity=20, cluster_id=None):
+    """단일 클러스터에 대한 OR-Tools 최적화 (개선된 버전)"""
+    
+    if not stations:
+        return None
+    
+    # 문제 실행 가능성 체크
+    total_pickup = sum(s.get('pickup', 0) for s in stations)
+    total_delivery = sum(s.get('delivery', 0) for s in stations)
+    '''
+    # 만약 수거량이나 배송량이 트럭 용량을 크게 초과하면 바로 휴리스틱 사용
+    if total_pickup > vehicle_capacity * num_vehicles * 2 or total_delivery > vehicle_capacity * num_vehicles * 2:
+        print(f"  ⚠ 문제 규모가 너무 큼 (수거: {total_pickup}, 배송: {total_delivery})")
+        classifier = SeoulDistrictClassifier()
+        actual_district = district_name.split('_')[0] if '_' in district_name else district_name
+        if actual_district in classifier.district_centers:
+            depot_lat, depot_lon = classifier.district_centers[actual_district]
+        else:
+            depot_lat = np.mean([s['lat'] for s in stations])
+            depot_lon = np.mean([s['lon'] for s in stations])
+        
+        depot = {
+            'name': f'{actual_district} 차고지',
+            'lat': depot_lat,
+            'lon': depot_lon
+        }
+        return solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot)
+    '''
+    # 구별 고정 차고지 사용
     classifier = SeoulDistrictClassifier()
-    center_lat, center_lon = classifier.district_centers.get(district_name, (37.5665, 126.9780))
+    
+    # district_name이 클러스터 이름 형식(예: "강남구_C1")인 경우 실제 구 이름만 추출
+    actual_district = district_name.split('_')[0] if '_' in district_name else district_name
+    
+    # 해당 구의 고정 차고지 좌표 가져오기
+    if actual_district in classifier.district_centers:
+        depot_lat, depot_lon = classifier.district_centers[actual_district]
+    else:
+        # 만약 구 정보가 없으면 클러스터 중심점 사용 (fallback)
+        depot_lat = np.mean([s['lat'] for s in stations])
+        depot_lon = np.mean([s['lon'] for s in stations])
+    
     depot = {
-        'id': f'DEPOT_{district_name}',
-        'name': f'{district_name} 차고지',
-        'lat': center_lat,
-        'lon': center_lon,
+        'id': f'DEPOT_{actual_district}',
+        'name': f'{actual_district} 차고지',
+        'lat': depot_lat,
+        'lon': depot_lon,
         'pickup': 0,
         'delivery': 0
     }
     
-    # 노드 리스트 생성
-    nodes = [depot] + problem_stations
+    nodes = [depot] + stations
+    pickups = [0] + [s.get('pickup', 0) for s in stations]
+    deliveries = [0] + [s.get('delivery', 0) for s in stations]
     
-    # 수거/배송량 리스트
-    pickups = [0] + [s.get('pickup', 0) for s in problem_stations]
-    deliveries = [0] + [s.get('delivery', 0) for s in problem_stations]
-    
-    # 거리 행렬 계산/지구상 두 지점 사이의 거리를 계산하는 함수
+    # 거리 행렬 계산
     def haversine(lat1, lon1, lat2, lon2):
         R = 6371
         phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -259,101 +488,102 @@ def solve_district_with_ortools(district_name, analysis, num_vehicles=2, vehicle
         a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
         return int(R * c * 1000)
-    #이중 for문으로 모든 노드 간의 거리를 계산하고 2차원 리스트로 만드는 과정 
+    
     distance_matrix = []
     for from_node in nodes:
         row = []
         for to_node in nodes:
-            dist = haversine(from_node['lat'], from_node['lon'], 
+            dist = haversine(from_node['lat'], from_node['lon'],
                            to_node['lat'], to_node['lon'])
             row.append(dist)
         distance_matrix.append(row)
-    
-    # 문제 크기에 따라 처리 방법 결정
-    if len(nodes) > 300:
-        # 큰 문제는 휴리스틱 사용
-        return solve_with_heuristic(district_name, problem_stations, num_vehicles, vehicle_capacity)
     
     # OR-Tools 모델 생성
     manager = pywrapcp.RoutingIndexManager(len(nodes), num_vehicles, 0)
     routing = pywrapcp.RoutingModel(manager)
     
-    # 거리 콜백/OR-Tools의 임시 작업 번호(내부 인덱스)를 우리가 아는 고유한 주소(실제 인덱스)로 변환해서, 정확한 두 지점 사이의 거리를 계산하는 함수
+    # 거리 콜백
     def distance_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         return distance_matrix[from_node][to_node]
-
-    # RegisterTransitCallback은 두 노드 사이의 거리를 계산하는 콜백 함수로, OR-Tools가 경로를 최적화할 때 사용한다.(계산기 등록)이동시 호출할 함수를 등록
-    # 이 함수는 distance_callback 함수 자체를 돌려주는 것이 아니라 엔진 내부에 등록된 고유한 ID번호(transit_callback_index)를 반환한다.
+    
     transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    #계산기 지정: 모든 차량의 경로 비용을 계산하는 공식 평가 도구로 지정한다고 최종적으로 설정하는 과정 
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-    #등록과 지정을 분리함으로써 다양한 평가 기준을 만들어 놓고 필요에 따라 선택적으로 사용할 수 있다.(거리뿐 아니라 이동시간을 계산 하는 time_ccallback함수도 만들 수 있다)
-
-
-
-    # 용량 제약/ 차량의 적재 용량을 고려하여 수거/배송량 제약을 추가한다.
+    
+    # 용량 제약 - 개선된 버전
+    # 초기 적재량을 설정 (수거/배송 균형을 위해)
+    initial_load = min(vehicle_capacity // 2, sum(deliveries))  # 초기에 일부 자전거를 적재한 상태로 시작
+    
     def capacity_callback(from_index):
         from_node = manager.IndexToNode(from_index)
         return pickups[from_node] - deliveries[from_node]
-    #계산기 등록: 차량의 적재 용량을 계산하는 콜백 함수를 등록한다.
+    
     capacity_callback_index = routing.RegisterUnaryTransitCallback(capacity_callback)
-    #규칙 설정 및 제약 추가 
+    
+    # 용량 제약 추가 시 여유를 둠
     routing.AddDimensionWithVehicleCapacity(
-        capacity_callback_index, #사용할 계산기 ID
-        0, #대기 시간 등 여유 용량(여기선 0으로 설정)
-        [vehicle_capacity] * num_vehicles, #각 차량이 가질 수 있는 최대 적재 용량을 리스트 형태로 지정
-        True, #모든 차량은 차고지에서 출발할 때 적재량이 0인 상태에서 시작해야한다 
-        "Capacity" #차량의 적재 용량을 관리하는 차원 이름 지정
+        capacity_callback_index,
+        0,  # slack
+        [vehicle_capacity] * num_vehicles,  # 각 차량의 최대 용량
+        False,  # start_cumul_to_zero를 False로 설정하여 초기 적재 허용
+        "Capacity"
     )
-
-    # [개선] 트럭 간 이동 거리 균등화를 위한 제약 조건 추가
+    
+    # 각 차량의 초기 적재량 설정
+    capacity_dimension = routing.GetDimensionOrDie("Capacity")
+    for vehicle_id in range(num_vehicles):
+        index = routing.Start(vehicle_id)
+        capacity_dimension.SetCumulVarSoftLowerBound(index, initial_load, 1000)
+        capacity_dimension.SetCumulVarSoftUpperBound(index, initial_load, 1000)
+    
+    # 거리 균등화
     routing.AddDimension(
         transit_callback_index,
-        0,  # no slack
-        50000,  # vehicle maximum travel distance (50km) 
-        True,  # start cumul to zero
+        0,
+        50000,
+        True,
         "Distance"
     )
     distance_dimension = routing.GetDimensionOrDie("Distance")
-    # GlobalSpanCost: 모든 차량의 경로 중 가장 긴 경로와 가장 짧은 경로의 차이에 페널티를 부과하여 경로 길이를 비슷하게 만듭니다.
-    # 계수(100)가 클수록 균등화 효과가 커집니다.
     distance_dimension.SetGlobalSpanCostCoefficient(100)
     
-    # 탐색 파라미터
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters() #표준 탐색 전략 설정
-    search_parameters.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC #PATH_CHEAPEST_ARC 전략은 Greedy방식이다 현재 위치에서 다음 노드로 이동할 때 가장 가까운 노드를 선택하는 방식이다.
-    )
-    # 첫번째 해답을 찾은 후 그 해답을 어떻게 개선해 나갈 것인지에 대한 고급 전략/현재 찾은 경로를 조금씩 변경 
-    search_parameters.local_search_metaheuristic = (
-        routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    )
-    #최적의 해답을 찾기 위해 최대 30초까지만 시간을 사용하겠다는 제한 시간 설정 
-    search_parameters.time_limit.FromSeconds(600)
+    # 탐색 파라미터 - 단순하고 빠른 설정
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     
-    # 문제 해결/ 위에 세운 제약 조건과 탐색 전략을 바탕으로 문제를 해결한다.
+    # 가장 기본적인 전략으로 시작
+    search_parameters.first_solution_strategy = (
+        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    )
+    
+    # 시간 제한 설정
+    search_parameters.time_limit.FromSeconds(30)  # 10초로 제한
+    
+    # 문제 해결
+    print(f"  🔄 OR-Tools 시도 중... (최대 30초)")
     solution = routing.SolveWithParameters(search_parameters)
     
-    if solution: #성공 케이스: extract_solution 함수를 호출하여 qhrwkqgks solution객체에서 경로,거리,수거/배송량 등의 정보를 추출하여 반환 
-        return extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles)
+    if solution:
+        result = extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles)
+        result['method'] = 'OR-Tools'
+        print(f"  ✅ OR-Tools로 경로 생성 성공")
+        return result
     else:
-        print(f"  ⚠ OR-Tools 해결 실패, 휴리스틱 사용")
-        return solve_with_heuristic(district_name, problem_stations, num_vehicles, vehicle_capacity)
+        print(f"  ⚠ OR-Tools 실패, 휴리스틱 사용")
+        result = solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot)
+        result['method'] = 'Heuristic'
+        return result
 
 # ---------------------------------------------------------------------------
-# 5. 솔루션 추출 및 포맷팅
+# 6. 솔루션 추출 및 포맷팅 (기존 코드 유지)
 # ---------------------------------------------------------------------------
 def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles):
     """OR-Tools 솔루션에서 경로 정보를 추출합니다"""
     
-    #트럭의 최종 운행 계획을 담을 리스트를 만든다/ 트럭이이동한 총 거리를 합산하기 위한 변수를 0으로 초기화한다
     routes = []
     total_distance = 0
-    #각 차량에 대해 경로를 추출한다/각 차량의 경로는 vehicle_id,    경로, 거리, 수거량, 배송량, 적재량 변화 등을 포함한다.
+    
     for vehicle_id in range(num_vehicles):
-        # 각 차량의 경로를 초기화한다/차량의 ID, 빈 경로, 거리, 수거량, 배송량, 적재량 변화 등을 초기화한다.
         route = {
             'vehicle_id': vehicle_id,
             'path': [],
@@ -363,19 +593,16 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
             'load_changes': []
         }
         
-        index = routing.Start(vehicle_id) #트럭의 출발점(차고지) 위치를 가져옴
-        current_load = 0 #트럭의 현재 적재량을 0으로 초기화
+        index = routing.Start(vehicle_id)
+        current_load = 0
         
-        while not routing.IsEnd(index): #트럭이 최종 목적지에 도착할 때까지 계속해서 다음 목적지를 찾아 이동한다. routing.IsEnd(index)는 현재 인덱스가 종점인지 확인하는 함수이다.
-            
-            # 현재 노드 인덱스를 가져오고, 해당 노드의 정보(이름,수거/배송량)를 가져온다.
+        while not routing.IsEnd(index):
             node_index = manager.IndexToNode(index)
             node = nodes[node_index]
             pickup = pickups[node_index]
             delivery = deliveries[node_index]
-            #트럭의 현재 적재량 업데이트
             current_load += pickup - delivery
-            #현재 방문지의 정보를 경로에 기록 
+            
             route['path'].append({
                 'name': node['name'],
                 'pickup': pickup,
@@ -385,12 +612,11 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
             
             route['pickups'] += pickup
             route['deliveries'] += delivery
-            #다음 목적지로 이동 준비 
-            previous_index = index #현재 위치를 이전 위치로 저장
-            index = solution.Value(routing.NextVar(index)) # 다음 목적지 인덱스를 가져옴
-            route['distance'] += routing.GetArcCostForVehicle(previous_index, index, vehicle_id) #이전 위치와 다음 위치 사이의 거리를 계산하여 경로 거리 업데이트
+            
+            previous_index = index
+            index = solution.Value(routing.NextVar(index))
+            route['distance'] += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
         
-        # 마지막 depot 도착
         node_index = manager.IndexToNode(index)
         route['path'].append({
             'name': nodes[node_index]['name'],
@@ -398,46 +624,79 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
             'delivery': 0,
             'current_load': current_load
         })
-        #실제 운행한 트럭의 경로만 최종 결과에 추가 
-        if len(route['path']) > 2:  # depot 외 방문지가 있는 경우만
+        
+        if len(route['path']) > 2:
             routes.append(route)
             total_distance += route['distance']
-    #트럭의 모든 운행 계획이 담긴 routes 리스트와 총 거리를 반환한다.
+    
     return {
         'routes': routes,
         'total_distance': total_distance
     }
 
 # ---------------------------------------------------------------------------
-# 6. 휴리스틱 솔버 (대규모 문제용)
+# 7. 휴리스틱 솔버 (개선 - 거리 계산 추가)
 # ---------------------------------------------------------------------------
-
-def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity):
-    """대규모 문제를 위한 휴리스틱 해법"""
+def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot=None):
+    """대규모 문제를 위한 휴리스틱 해법 (거리 계산 포함)"""
+    
+    # depot이 없으면 구의 중심점 사용
+    if depot is None:
+        classifier = SeoulDistrictClassifier()
+        actual_district = district_name.split('_')[0] if '_' in district_name else district_name
+        if actual_district in classifier.district_centers:
+            depot_lat, depot_lon = classifier.district_centers[actual_district]
+        else:
+            depot_lat = np.mean([s['lat'] for s in stations]) if stations else 37.5665
+            depot_lon = np.mean([s['lon'] for s in stations]) if stations else 126.9780
+        
+        depot = {
+            'name': f'{actual_district} 차고지',
+            'lat': depot_lat,
+            'lon': depot_lon
+        }
+    
+    # Haversine 거리 계산 함수
+    def calculate_distance(lat1, lon1, lat2, lon2):
+        R = 6371
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return R * c * 1000  # 미터 단위
     
     pickup_stations = [s for s in stations if s.get('pickup', 0) > 0]
     delivery_stations = [s for s in stations if s.get('delivery', 0) > 0]
-    2
-    # 우선순위 정렬
+    
     pickup_stations.sort(key=lambda x: x.get('pickup', 0), reverse=True)
     delivery_stations.sort(key=lambda x: x.get('delivery', 0), reverse=True)
     
     routes = []
+    total_distance = 0
+    
     for vehicle_id in range(num_vehicles):
         route = {
             'vehicle_id': vehicle_id,
-            'path': [{'name': f'{district_name} 차고지', 'pickup': 0, 'delivery': 0, 'current_load': 0}],
+            'path': [{'name': depot['name'], 'pickup': 0, 'delivery': 0, 'current_load': 0}],
             'distance': 0,
             'pickups': 0,
             'deliveries': 0
         }
         
         current_load = 0
+        current_lat, current_lon = depot['lat'], depot['lon']
         
         # 수거 작업
         for station in pickup_stations[vehicle_id::num_vehicles]:
             if current_load + station['pickup'] <= vehicle_capacity:
+                # 거리 계산 및 누적
+                dist = calculate_distance(current_lat, current_lon, station['lat'], station['lon'])
+                route['distance'] += dist
+                
                 current_load += station['pickup']
+                current_lat, current_lon = station['lat'], station['lon']
+                
                 route['path'].append({
                     'name': station['name'],
                     'pickup': station['pickup'],
@@ -449,7 +708,13 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
         # 배송 작업
         for station in delivery_stations[vehicle_id::num_vehicles]:
             if current_load >= station['delivery']:
+                # 거리 계산 및 누적
+                dist = calculate_distance(current_lat, current_lon, station['lat'], station['lon'])
+                route['distance'] += dist
+                
                 current_load -= station['delivery']
+                current_lat, current_lon = station['lat'], station['lon']
+                
                 route['path'].append({
                     'name': station['name'],
                     'pickup': 0,
@@ -458,9 +723,13 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
                 })
                 route['deliveries'] += station['delivery']
         
-        # 차고지 복귀
+        # 차고지 복귀 거리 추가
+        if len(route['path']) > 1:  # 실제 작업이 있었다면
+            dist = calculate_distance(current_lat, current_lon, depot['lat'], depot['lon'])
+            route['distance'] += dist
+        
         route['path'].append({
-            'name': f'{district_name} 차고지',
+            'name': depot['name'],
             'pickup': 0,
             'delivery': 0,
             'current_load': current_load
@@ -468,26 +737,55 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
         
         if len(route['path']) > 2:
             routes.append(route)
+            total_distance += route['distance']
     
-    return {'routes': routes, 'total_distance': 0}
+    print(f"  ✅ 휴리스틱으로 경로 생성 완료")
+    
+    return {
+        'routes': routes, 
+        'total_distance': total_distance,
+        'method': 'Heuristic'
+    }
 
 # ---------------------------------------------------------------------------
-# 7. 결과 출력
+# 8. 결과 출력 (개선)
 # ---------------------------------------------------------------------------
 def print_district_solution(district_name, solution):
     """구별 솔루션을 보기 좋게 출력합니다"""
     
     print(f"\n{'='*70}")
-    print(f"{district_name} 재배치 계획")
+    print(f"📍 {district_name} 재배치 계획")
+    
+    # 해결 방법 표시
+    if solution:
+        if solution.get('clustering_used'):
+            print(f"🔧 클러스터링 사용: {solution.get('num_clusters', 0)}개 클러스터")
+            if 'solution_methods' in solution:
+                methods = solution.get('solution_methods', [])
+                or_tools_count = methods.count('OR-Tools')
+                heuristic_count = methods.count('Heuristic')
+                print(f"📊 해결 방법: OR-Tools {or_tools_count}개, Heuristic {heuristic_count}개")
+        else:
+            method = solution.get('method', 'Unknown')
+            print(f"🔧 해결 방법: {method}")
+    
     print(f"{'='*70}")
     
     if not solution or not solution['routes']:
         print("재배치가 필요없거나 경로 생성 실패")
         return
     
+    # 총 거리 표시
+    if solution.get('total_distance', 0) > 0:
+        print(f"\n📏 총 이동 거리: {solution['total_distance']/1000:.2f}km")
+    
     for route in solution['routes']:
-        print(f"\n🚚 트럭 {route['vehicle_id'] + 1}번")
-        print(f"총 거리: {route['distance']/1000:.2f}km")
+        cluster_info = f" (클러스터 {route.get('cluster_id')})" if 'cluster_id' in route else ""
+        print(f"\n🚚 트럭 {route['vehicle_id'] + 1}번{cluster_info}")
+        
+        if route['distance'] > 0:
+            print(f"이동 거리: {route['distance']/1000:.2f}km")
+        
         print(f"수거: {route['pickups']}대, 배송: {route['deliveries']}대")
         print("\n경로:")
         
@@ -500,17 +798,17 @@ def print_district_solution(district_name, solution):
                 print(f"  {i}. 📍 {stop['name']}")
 
 # ---------------------------------------------------------------------------
-# 8. 메인 실행 함수
+# 9. 메인 실행 함수 (수정)
 # ---------------------------------------------------------------------------
 def main():
     """통합 재배치 시스템 메인 함수"""
     
     print("\n" + "="*70)
     print(" "*20 + "서울시 따릉이 통합 재배치 시스템")
+    print(" "*20 + "🆕 클러스터링 기반 최적화")
     print(" "*25 + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*70)
     
-    # 설정
     API_KEY = "6464716442737069363863566b466c"
     
     # 1. 데이터 수집 및 구별 분류
@@ -520,23 +818,22 @@ def main():
     district_analysis = analyze_district_redistribution_needs(district_stations)
     
     # 3. 우선순위 높은 구 선택
-    sorted_districts = sorted(district_analysis.items(), 
-                            key=lambda x: x[1]['urgency_score'], 
+    sorted_districts = sorted(district_analysis.items(),
+                            key=lambda x: x[1]['urgency_score'],
                             reverse=True)
     
     print("\n" + "="*70)
     print("STEP 3: 재배치 계획 수립")
     print("="*70)
     
-    # 처리 방식 선택
     print("\n처리 방식을 선택하세요:")
-    print("1. 특정 구 선택 처리")
-    print("2. 구별 상세 분석만 보기")
+    print("1. 특정 구 선택 처리 (클러스터링)")
+    print("2. 특정 구 선택 처리 (기존 방식)")
+    print("3. 구별 상세 분석만 보기")
     
-    choice = input("\n선택 (1/2): ").strip()
+    choice = input("\n선택 (1/2/3): ").strip()
     
-                    
-    if choice == '1':
+    if choice in ['1', '2']:
         # 특정 구 선택
         print("\n사용 가능한 구:")
         for i, (district, _) in enumerate(sorted_districts[:25], 1):
@@ -547,28 +844,36 @@ def main():
             if 0 <= idx < len(sorted_districts):
                 district, analysis = sorted_districts[idx]
                 
-                # 상세 설정
                 num_vehicles = int(input(f"투입할 트럭 수 (권장: {max(1, analysis['urgency_score']//10)}): ") or 2)
                 capacity = int(input("트럭 용량 (기본: 20): ") or 20)
                 
-                solution = solve_district_with_ortools(
-                    district, analysis, num_vehicles, capacity
-                )
+                if choice == '1':
+                    # 🆕 클러스터링 기반 해결
+                    solution = solve_district_with_clustering(
+                        district, analysis, num_vehicles, capacity
+                    )
+                else:
+                    # 기존 방식
+                    solution = solve_single_cluster_with_ortools(
+                        district, 
+                        analysis['pickup_needed'] + analysis['delivery_needed'],
+                        num_vehicles, 
+                        capacity
+                    )
                 
                 if solution:
                     print_district_solution(district, solution)
                     
-                    # 결과 저장 옵션
                     save = input("\n결과를 JSON으로 저장하시겠습니까? (y/n): ")
                     if save.lower() == 'y':
                         filename = f"{district}_redistribution_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                         with open(filename, 'w', encoding='utf-8') as f:
                             json.dump(solution, f, ensure_ascii=False, indent=2)
                         print(f"✓ {filename}에 저장되었습니다.")
-        except:
-            print("잘못된 입력입니다.")
-            
-    elif choice == '2':
+        except Exception as e:
+            print(f"오류 발생: {e}")
+    
+    elif choice == '3':
         # 구별 상세 분석
         for district, analysis in sorted_districts[:25]:
             print(f"\n{district}:")
@@ -580,33 +885,6 @@ def main():
     print("\n" + "="*70)
     print("프로그램 종료")
     print("="*70)
-
-# ---------------------------------------------------------------------------
-# 9. 추가 유틸리티 함수
-# ---------------------------------------------------------------------------
-def export_all_districts_solution(district_stations, district_analysis):
-    """전체 구의 솔루션을 한번에 계산하고 저장"""
-    
-    all_solutions = {}
-    
-    for district in district_stations.keys():
-        if district in district_analysis:
-            analysis = district_analysis[district]
-            if analysis['urgency_score'] > 0:
-                num_vehicles = min(3, max(1, analysis['urgency_score'] // 10))
-                solution = solve_district_with_ortools(
-                    district, analysis, num_vehicles, 20
-                )
-                if solution:
-                    all_solutions[district] = solution
-    
-    # JSON으로 저장
-    filename = f"seoul_bike_redistribution_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(all_solutions, f, ensure_ascii=False, indent=2)
-    
-    print(f"✓ 전체 구 솔루션이 {filename}에 저장되었습니다.")
-    return all_solutions
 
 if __name__ == "__main__":
     main()
