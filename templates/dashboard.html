@@ -21,11 +21,11 @@
         [x-cloak] { display: none !important; }
         
         .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2ECC71 0%, #27AE60 50%, #1ABC9C 100%);
         }
         
         .gradient-text {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2ECC71 0%, #1ABC9C 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -93,13 +93,30 @@
     <div x-data="dashboardApp()" x-init="init()" x-cloak class="min-h-screen">
         <!-- Header -->
         <header class="gradient-bg text-white shadow-lg sticky top-0 z-40">
-            <div class="container mx-auto px-4 py-4">
+            <div class="container mx-auto px-4 py-3">
                 <div class="flex justify-between items-center">
                     <div class="flex items-center space-x-4">
-                        <i class="fas fa-bicycle text-3xl"></i>
-                        <div>
-                            <h1 class="text-2xl font-bold">서울 따릉이 재배치 시스템</h1>
-                            <p class="text-purple-100 text-sm">실시간 최적화 대시보드</p>
+                        <!-- 서울자전거 따릉이 로고 -->
+                        <div class="flex items-center">
+                            <div class="flex items-center space-x-1">
+                                <div class="w-10 h-10 bg-green-400 rounded-full flex items-center justify-center">
+                                    <div class="w-4 h-4 bg-white rounded-full"></div>
+                                </div>
+                                <div class="w-10 h-10 bg-gray-700 rounded-full -ml-4 flex items-center justify-center">
+                                    <div class="w-4 h-4 bg-gray-500 rounded-full"></div>
+                                </div>
+                            </div>
+                            <div class="ml-3">
+                                <h1 class="text-2xl font-bold flex items-center">
+                                    <span class="text-white">서울자전거</span>
+                                    <span class="ml-2 text-green-300 font-extrabold">따릉이</span>
+                                </h1>
+                                <p class="text-xs text-green-100 tracking-wider font-semibold">SEOUL BIKE</p>
+                            </div>
+                        </div>
+                        <div class="ml-4 pl-4 border-l-2 border-green-300/50">
+                            <h2 class="text-lg font-semibold">재배치 최적화 시스템</h2>
+
                         </div>
                     </div>
                     <div class="flex items-center space-x-4">
@@ -130,13 +147,13 @@
                         <div class="space-y-2">
                             <button @click="collectData()" 
                                     :disabled="loading.collect"
-                                    class="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50">
+                                    class="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-lg hover:from-green-700 hover:to-teal-700 transition disabled:opacity-50 shadow-lg">
                                 <i class="fas fa-sync-alt mr-2" :class="{'fa-spin': loading.collect}"></i>
                                 데이터 수집
                             </button>
                             <button @click="autoOptimize()" 
                                     :disabled="!selectedDistrict"
-                                    class="w-full px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition disabled:opacity-50">
+                                    class="w-full px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-lg hover:from-teal-700 hover:to-cyan-700 transition disabled:opacity-50 shadow-lg">
                                 <i class="fas fa-magic mr-2"></i>
                                 자동 최적화
                             </button>
@@ -328,7 +345,7 @@
                     <!-- Debug Button -->
                     <div class="bg-white rounded-xl shadow-md p-4 mb-4" x-show="optimizationResult">
                         <button @click="() => { console.log('Manual display test'); console.log('Routes:', optimizationResult.routes); displayRoutesOnMap(optimizationResult.routes); }"
-                                class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                class="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-lg hover:from-green-700 hover:to-teal-700 shadow">
                             <i class="fas fa-map-marked-alt mr-2"></i>
                             수동으로 경로 표시 (디버그)
                         </button>
@@ -343,14 +360,14 @@
                         
                         <!-- Summary Stats -->
                         <div class="grid grid-cols-2 gap-2 mb-4">
-                            <div class="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg">
+                            <div class="text-center p-3 bg-gradient-to-br from-green-50 to-teal-50 rounded-lg">
                                 <div class="text-2xl font-bold gradient-text">
                                     <span x-text="optimizationResult ? (optimizationResult.total_distance/1000).toFixed(1) : '-'"></span>
                                 </div>
                                 <div class="text-xs text-gray-600">총 거리(km)</div>
                             </div>
-                            <div class="text-center p-3 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg">
-                                <div class="text-2xl font-bold text-blue-600">
+                            <div class="text-center p-3 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg">
+                                <div class="text-2xl font-bold text-teal-600">
                                     <span x-text="optimizationResult?.routes?.length || '-'"></span>
                                 </div>
                                 <div class="text-xs text-gray-600">활성 트럭</div>
