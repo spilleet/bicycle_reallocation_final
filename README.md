@@ -1,192 +1,228 @@
-# 서울시 따릉이 재배치 시스템 웹사이트
+# 서울시 따릉이 재배치 최적화 시스템
 
-## 📋 개요
+## 📋 프로젝트 소개
+서울시 공공자전거 '따릉이'의 효율적인 재배치를 위한 웹 기반 최적화 시스템입니다. 실시간 데이터를 기반으로 각 구별 자전거 불균형을 분석하고, 최적의 재배치 경로를 계산하여 시각화합니다.
 
-이 프로젝트는 서울시 공공데이터 API를 활용하여 실시간 따릉이 대여소 정보를 수집하고, 클러스터링 기반 최적화 알고리즘을 통해 효율적인 자전거 재배치 계획을 수립하는 웹 애플리케이션입니다.
-
-## ✨ 주요 기능
+## 🚀 주요 기능
 
 ### 1. 실시간 데이터 수집
-- 서울시 공공데이터 API를 통한 실시간 따릉이 대여소 정보 수집
-- 구별 자동 분류 및 분석
-- 대여소별 수거/배송 필요도 자동 계산
+- 서울시 열린데이터광장 API를 통한 실시간 따릉이 대여소 정보 수집
+- 구별 자동 분류 및 재배치 필요도 분석
+- 긴급도 점수 기반 우선순위 산정
 
-### 2. 클러스터링 기반 최적화
-- K-means 클러스터링을 통한 대여소 그룹화
-- 수거/배송 작업량 균형 고려
-- 지리적 근접성 기반 클러스터 병합
+### 2. 최적화 알고리즘
+- **OR-Tools 기반 최적화**: Google OR-Tools를 활용한 차량 경로 문제(VRP) 해결
+- **K-means 클러스터링**: 대규모 문제를 작은 단위로 분할하여 처리
+- **휴리스틱 알고리즘**: 최단 근접 이웃 기반 빠른 경로 생성
+- **적응형 알고리즘 선택**: 문제 규모에 따라 자동으로 최적 알고리즘 선택
 
-### 3. 경로 최적화
-- OR-Tools를 활용한 Vehicle Routing Problem (VRP) 해결
-- 휴리스틱 알고리즘을 통한 대규모 문제 처리
-- 트럭 용량 및 거리 제약 조건 고려
+### 3. 대시보드 기능
+- **인터랙티브 지도**: Leaflet 기반 실시간 경로 시각화
+- **트럭별 경로 표시**: 색상 구분된 경로 및 정류소 마커
+- **실시간 통계**: 구별 불균형 현황 및 재배치 필요 대수
+- **경로 상세 정보**: 각 트럭의 수거/배송 계획 및 이동 거리
 
-### 4. 시각화 및 결과 분석
-- Leaflet 지도를 통한 대여소 위치 표시
-- 최적화된 경로의 시각적 표현
-- 상세한 경로 정보 및 통계 제공
+## 🛠 기술 스택
 
-## 🚀 설치 및 실행
+### Backend
+- **Python 3.13+**
+- **Flask**: 웹 프레임워크
+- **OR-Tools**: 최적화 엔진
+- **scikit-learn**: K-means 클러스터링
+- **NumPy**: 수치 연산
 
-### 1. 환경 요구사항
-- Python 3.8 이상
-- pip (Python 패키지 관리자)
+### Frontend
+- **Alpine.js**: 반응형 UI 프레임워크
+- **Tailwind CSS**: 유틸리티 기반 스타일링
+- **Leaflet.js**: 인터랙티브 지도
+- **Chart.js**: 데이터 시각화
 
-### 2. 설치 단계
+## 📦 설치 방법
 
+### 1. 저장소 클론
 ```bash
-# 1. 프로젝트 클론 또는 다운로드
-git clone <repository-url>
+git clone https://github.com/yourusername/bicycle_reallocation_final2.git
 cd bicycle_reallocation_final2
+```
 
-# 2. 가상환경 생성 (권장)
+### 2. 가상환경 설정 (권장)
+```bash
 python -m venv venv
+source venv/bin/activate  # Mac/Linux
+# 또는
+venv\Scripts\activate  # Windows
+```
 
-# 3. 가상환경 활성화
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-
-# 4. 필요한 패키지 설치
+### 3. 의존성 설치
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. 실행
-
+### 4. 환경 변수 설정 (선택사항)
 ```bash
-# Flask 애플리케이션 실행
-python app.py
+export SEOUL_API_KEY="your_api_key_here"  # 기본값 제공됨
 ```
 
-웹 브라우저에서 `http://localhost:5000`으로 접속하여 시스템을 사용할 수 있습니다.
+## 🚀 실행 방법
 
-## 📖 사용법
+### 웹 애플리케이션 실행
+```bash
+python app_new.py
+```
+브라우저에서 http://localhost:8080 접속
+
+### CLI 모드 실행
+```bash
+python reallocation_final.py
+```
+
+## 📱 사용 방법
 
 ### 1. 데이터 수집
-- 웹페이지에서 "데이터 수집 시작" 버튼 클릭
-- 서울시 공공데이터 API를 통해 실시간 따릉이 정보 수집
-- 구별 분석 및 긴급도 계산
+- 대시보드 상단의 "데이터 수집" 버튼 클릭
+- 서울시 25개 구의 실시간 따릉이 현황 자동 수집
 
-### 2. 구별 분석
-- 수집된 데이터를 바탕으로 구별 재배치 필요도 분석
-- 긴급도 순으로 구 목록 표시
-- 각 구의 상세 정보 확인 (수거/배송 필요 대여소 수, 총 불균형 등)
+### 2. 구 선택
+- 좌측 패널에서 재배치가 필요한 구 선택
+- 긴급도 점수가 높은 구가 상단에 표시됨
 
-### 3. 재배치 계획 수립
-- 재배치가 필요한 구 선택
-- 트럭 수 및 용량 설정
-- 클러스터링 사용 여부 선택
-- "최적화 실행" 버튼으로 경로 최적화 수행
+### 3. 최적화 실행
+- 트럭 대수 및 용량 설정
+- "최적화 실행" 버튼 클릭
+- 또는 "자동 최적화"로 AI가 최적 파라미터 자동 설정
 
 ### 4. 결과 확인
-- 지도상에 최적화된 경로 표시
-- 각 트럭별 상세 경로 정보 확인
-- 총 이동 거리 및 작업량 통계 확인
+- 지도에서 트럭별 경로 확인
+- 각 경로의 수거/배송 정류소 확인
+- CSV 형식으로 경로 내보내기 가능
 
-## 🏗️ 시스템 아키텍처
+## 📊 주요 알고리즘
 
-### 백엔드 (Flask)
-- **데이터 수집**: 서울시 공공데이터 API 연동
-- **구 분류**: GeoJSON 기반 좌표 매핑
-- **클러스터링**: scikit-learn K-means 알고리즘
-- **최적화**: OR-Tools VRP 솔버
-- **API 엔드포인트**: RESTful API 제공
-
-### 프론트엔드 (HTML/CSS/JavaScript)
-- **Bootstrap**: 반응형 UI 프레임워크
-- **Leaflet**: 인터랙티브 지도 라이브러리
-- **Chart.js**: 데이터 시각화
-- **AJAX**: 비동기 데이터 통신
-
-## 🔧 기술 스택
-
-### 백엔드
-- **Flask**: Python 웹 프레임워크
-- **OR-Tools**: Google 최적화 라이브러리
-- **scikit-learn**: 머신러닝 라이브러리
-- **NumPy**: 수치 계산 라이브러리
-
-### 프론트엔드
-- **Bootstrap 5**: CSS 프레임워크
-- **Leaflet**: 오픈소스 지도 라이브러리
-- **Font Awesome**: 아이콘 라이브러리
-- **Vanilla JavaScript**: ES6+ 모던 JavaScript
-
-## 📊 알고리즘 상세
-
-### 1. 클러스터링 알고리즘
+### 1. 구별 긴급도 산정
 ```python
-# K-means 클러스터링
-kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-labels = kmeans.fit_predict(features_scaled)
+urgency_score = (
+    len(pickup_needed) * 2 +  # 수거 필요 정류소 (가중치 2)
+    len(delivery_needed) * 1.5 +  # 배송 필요 정류소 (가중치 1.5)
+    total_imbalance * 0.1  # 총 불균형 대수
+)
 ```
 
-### 2. 경로 최적화
-```python
-# OR-Tools VRP 모델
-manager = pywrapcp.RoutingIndexManager(len(nodes), num_vehicles, 0)
-routing = pywrapcp.RoutingModel(manager)
+### 2. 클러스터링 기준
+- 30개 이상 정류소: K-means 클러스터링 적용
+- 30개 미만: 직접 OR-Tools 적용
+- 실패 시: 휴리스틱 알고리즘으로 폴백
+
+### 3. 제약 조건
+- 트럭 용량: 기본 20대
+- 시간 제약: 없음 (거리 최소화만 고려)
+- 수거/배송 균형: 각 정류소의 요구사항 충족
+
+## 🗂 프로젝트 구조
+```
+bicycle_reallocation_final2/
+├── app_new.py              # Flask 웹 애플리케이션
+├── reallocation_final.py   # 핵심 최적화 로직
+├── templates/
+│   ├── dashboard.html      # 메인 대시보드
+│   └── index_new.html      # 클래식 버전
+├── requirements.txt        # Python 패키지 목록
+└── README.md              # 프로젝트 문서
 ```
 
-### 3. 거리 계산
-```python
-# Haversine 공식을 통한 지구상 두 점 간 거리 계산
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371  # 지구 반지름 (km)
-    # ... 거리 계산 로직
-```
+## 🔧 주요 설정
 
-## 🎯 최적화 목표
+### 트럭 설정
+- **기본 트럭 대수**: 2대
+- **트럭 용량**: 20대
+- **차고지 위치**: 각 구청 위치 기준
 
-1. **효율성**: 총 이동 거리 최소화
-2. **균형**: 수거/배송 작업량 균등 분배
-3. **실용성**: 트럭 용량 및 시간 제약 고려
-4. **확장성**: 대규모 문제 처리 가능
+### API 설정
+- **데이터 갱신 주기**: 30분 (백그라운드)
+- **API 제한**: 시간당 1000건
+- **캐시 유효시간**: 5분
 
-## 📈 성능 지표
+## 📈 성능 최적화
 
-- **처리 시간**: 일반적인 구별 문제 (30초 이내)
-- **정확도**: OR-Tools 최적해 vs 휴리스틱 해 비교
-- **확장성**: 최대 1000개 대여소, 10대 트럭까지 지원
+### 1. 캐싱 전략
+- Flask-Caching으로 API 응답 캐싱
+- 5분간 동일 데이터 재사용
 
-## 🔍 API 엔드포인트
+### 2. 병렬 처리
+- 클러스터별 독립적 최적화
+- 백그라운드 데이터 업데이트
+
+### 3. 적응형 알고리즘
+- 문제 규모에 따른 알고리즘 자동 선택
+- 실패 시 자동 폴백 메커니즘
+
+## 🎯 시각화 특징
+
+### 1. 트럭별 경로 시각화
+- 각 트럭마다 고유한 색상으로 경로 표시
+- 수거/배송 정류소를 동일한 색상의 마커로 표시
+- 출발/도착 지점 특별 표시
+
+### 2. 인터랙티브 기능
+- 경로 클릭 시 상세 정보 팝업
+- "보기" 버튼으로 특정 트럭 경로 포커스
+- 지도 줌/패닝 기능
+
+### 3. 토스트 알림
+- 작업 완료/오류 알림
+- 3초 후 자동 사라짐
+- 수동 닫기 버튼 제공
+
+## 📊 API 엔드포인트
+
+### POST `/api/data/collect`
+- 실시간 데이터 수집 및 분석
 
 ### GET `/api/districts`
-- 구별 분석 데이터 반환
-- 실시간 따릉이 정보 수집 및 분석
+- 구별 통계 정보 조회
 
-### POST `/api/solve`
-- 특정 구의 재배치 문제 해결
-- 클러스터링 및 경로 최적화 수행
+### GET `/api/district/<district_id>`
+- 특정 구 상세 정보
 
-### GET `/api/stations/<district>`
-- 특정 구의 대여소 정보 반환
-- 수거/배송 필요 대여소 목록
+### POST `/api/optimize`
+- 경로 최적화 실행
+```json
+{
+    "district_id": "강남구",
+    "num_vehicles": 2,
+    "vehicle_capacity": 20,
+    "use_clustering": true
+}
+```
 
-## 🚨 주의사항
+### GET `/api/statistics`
+- 전체 통계 정보
 
-1. **API 키**: 서울시 공공데이터 API 키가 필요합니다
-2. **데이터 제한**: API 호출 횟수 제한이 있을 수 있습니다
-3. **성능**: 대규모 문제의 경우 처리 시간이 오래 걸릴 수 있습니다
+### GET `/api/export/<format>`
+- 데이터 내보내기 (json/csv)
 
-## 🔮 향후 개선 계획
+## 🤝 기여 방법
 
-1. **실시간 모니터링**: 대시보드 및 알림 시스템
-2. **예측 모델링**: 수요 예측을 통한 사전 재배치 계획
-3. **모바일 앱**: iOS/Android 네이티브 앱 개발
-4. **AI 최적화**: 딥러닝 기반 경로 최적화
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📞 문의 및 지원
-
-프로젝트 관련 문의사항이나 버그 리포트는 이슈 트래커를 통해 제출해 주세요.
-
-## 📄 라이선스
-
+## 📝 라이선스
 이 프로젝트는 MIT 라이선스 하에 배포됩니다.
 
----
+## 👥 개발자
+- 이동욱
 
-**개발자**: AI Assistant  
-**최종 업데이트**: 2024년 12월  
-**버전**: 1.0.0
+## 🙏 감사의 말
+- 서울시 열린데이터광장 API 제공
+- Google OR-Tools 오픈소스 프로젝트
+- 따릉이 운영팀의 노고에 감사드립니다
+
+## 📞 문의
+- Email: your.email@example.com
+- GitHub Issues: [프로젝트 이슈 페이지](https://github.com/yourusername/bicycle_reallocation_final2/issues)
+
+---
+**Last Updated**: 2025.08.25  
+**Version**: 2.0.0
