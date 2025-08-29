@@ -75,7 +75,7 @@ class DataStore:
 data_store = DataStore()
 
 # API 키 (환경변수에서 가져오거나 기본값 사용)
-API_KEY = os.environ.get('SEOUL_API_KEY', 'YOUR_API_KEY')
+API_KEY = os.environ.get('SEOUL_API_KEY', '6464716442737069363863566b466c')
 
 # ===========================================================================
 # 백그라운드 작업

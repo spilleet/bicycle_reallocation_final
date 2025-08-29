@@ -342,7 +342,7 @@ def analyze_district_redistribution_needs(district_stations):
             'pickup_needed': pickup_needed,
             'delivery_needed': delivery_needed,
             'total_imbalance': total_imbalance,
-            'urgency_score': int((len(pickup_needed) + len(delivery_needed)) / len(stations) * 100) if len(stations) > 0 else 0
+            'urgency_score': len(pickup_needed) + len(delivery_needed)
         }
     
     sorted_districts = sorted(district_analysis.items(), 
@@ -800,7 +800,7 @@ def main():
     print(" "*25 + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*70)
     
-    API_KEY = "6464716442737069363863566b466c"
+    API_KEY = "YOUR_API_KEY"
     
     # 1. 데이터 수집 및 구별 분류
     district_stations = get_bike_station_data_by_district(API_KEY)
