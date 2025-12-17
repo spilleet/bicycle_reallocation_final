@@ -41,7 +41,7 @@
 
 ### 1. 저장소 클론
 ```bash
-git clone https://github.com/yourusername/bicycle_reallocation_final.git
+git clone https://github.com/spilleet/bicycle_reallocation_final
 cd bicycle_reallocation_final
 ```
 
