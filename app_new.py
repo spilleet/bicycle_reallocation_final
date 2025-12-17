@@ -1,5 +1,5 @@
 """
-서울시 따릉이 재배치 시스템 - 현대적 웹 애플리케이션
+서울시 따릉이 재배치 시스템 
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
