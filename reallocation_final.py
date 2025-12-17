@@ -13,7 +13,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ---------------------------------------------------------------------------
-# 1. GeoJSON 기반 구 분류기 (기존 코드 유지)
+# 1. GeoJSON 기반 구 분류기 
 # ---------------------------------------------------------------------------
 class SeoulDistrictClassifier:
     """서울시 구 분류기 (GeoJSON 활용)"""
@@ -86,7 +86,7 @@ class SeoulDistrictClassifier:
         return closest_district
 
 # ---------------------------------------------------------------------------
-# 🆕 2. 클러스터링 모듈
+# 2. 클러스터링 모듈
 # ---------------------------------------------------------------------------
 class BikeStationClusterer:
     """따릉이 대여소 클러스터링"""
@@ -108,7 +108,7 @@ class BikeStationClusterer:
             elif station.get('delivery', 0) > 0:
                 delivery_stations.append(station)
         
-        print(f"\n📊 클러스터링 시작:")
+        print(f"\n 클러스터링 시작:")
         print(f"  - 수거 필요: {len(pickup_stations)}개")
         print(f"  - 배송 필요: {len(delivery_stations)}개")
         print(f"  - 트럭 수: {self.num_vehicles}대")
@@ -218,7 +218,7 @@ class BikeStationClusterer:
         while len(final_clusters) < self.num_vehicles:
             final_clusters.append([])
         
-        print(f"\n✅ 클러스터링 완료: {len(final_clusters)}개 클러스터 생성")
+        print(f"\n 클러스터링 완료: {len(final_clusters)}개 클러스터 생성")
         for i, cluster in enumerate(final_clusters):
             if cluster:
                 pickup_count = sum(1 for s in cluster if s.get('pickup', 0) > 0)
@@ -238,7 +238,7 @@ class BikeStationClusterer:
         return R * c
 
 # ---------------------------------------------------------------------------
-# 3. 데이터 수집 및 구별 분류 (기존 코드 유지)
+# 3. 데이터 수집 및 구별 분류 
 # ---------------------------------------------------------------------------
 def get_bike_station_data_by_district(api_key):
     """따릉이 데이터를 수집하고 구별로 분류합니다"""
@@ -284,7 +284,7 @@ def get_bike_station_data_by_district(api_key):
     return district_stations
 
 # ---------------------------------------------------------------------------
-# 4. 구별 재배치 분석 (기존 코드 유지)
+# 4. 구별 재배치 분석 
 # ---------------------------------------------------------------------------
 def analyze_district_redistribution_needs(district_stations):
     """구별 재배치 필요도를 분석합니다"""
@@ -372,9 +372,9 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
         return None
     
     print(f"\n{'='*70}")
-    print(f"🚀 {district_name} 클러스터링 기반 최적화")
+    print(f" {district_name} 클러스터링 기반 최적화")
     print(f"{'='*70}")
-    print(f"📌 문제 크기: {len(problem_stations)}개 대여소")
+    print(f" 문제 크기: {len(problem_stations)}개 대여소")
     
     # Debug: Check if stations have coordinates
     print(f"\n[DEBUG] First station data: {problem_stations[0] if problem_stations else 'No stations'}")
@@ -574,7 +574,7 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
     if solution:
         result = extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles)
         result['method'] = 'OR-Tools'
-        print(f"  ✅ OR-Tools로 경로 생성 성공")
+        print(f"   OR-Tools로 경로 생성 성공")
         return result
     else:
         print(f"  ⚠ OR-Tools 실패, 휴리스틱 사용")
@@ -583,7 +583,7 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
         return result
 
 # ---------------------------------------------------------------------------
-# 6. 솔루션 추출 및 포맷팅 (기존 코드 유지)
+# 6. 솔루션 추출 및 포맷팅 
 # ---------------------------------------------------------------------------
 def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles):
     """OR-Tools 솔루션에서 경로 정보를 추출합니다"""
@@ -655,7 +655,7 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
     }
 
 # ---------------------------------------------------------------------------
-# 7. 휴리스틱 솔버 (개선 - 거리 계산 추가)
+# 7. 휴리스틱 솔버 
 # ---------------------------------------------------------------------------
 def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot):
     """'최단 근접 이웃' 기반의 휴리스틱 해법"""
@@ -736,16 +736,16 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
             routes.append(route)
             total_distance += route['distance']
 
-    print(f"  ✅ 휴리스틱(최단 근접)으로 경로 생성 완료")
+    print(f"  휴리스틱(최단 근접)으로 경로 생성 완료")
     return {'routes': routes, 'total_distance': total_distance, 'method': 'Heuristic'}
 # ---------------------------------------------------------------------------
-# 8. 결과 출력 (개선)
+# 8. 결과 출력 
 # ---------------------------------------------------------------------------
 def print_district_solution(district_name, solution):
     """구별 솔루션을 보기 좋게 출력합니다"""
     
     print(f"\n{'='*70}")
-    print(f"📍 {district_name} 재배치 계획")
+    print(f" {district_name} 재배치 계획")
     
     # 해결 방법 표시
     if solution:
@@ -782,21 +782,21 @@ def print_district_solution(district_name, solution):
         
         for i, stop in enumerate(route['path']):
             if stop['pickup'] > 0:
-                print(f"  {i}. ↗️ {stop['name']}: +{stop['pickup']}대 (적재: {stop['current_load']})")
+                print(f"  {i}. ↗ {stop['name']}: +{stop['pickup']}대 (적재: {stop['current_load']})")
             elif stop['delivery'] > 0:
-                print(f"  {i}. ↘️ {stop['name']}: -{stop['delivery']}대 (적재: {stop['current_load']})")
+                print(f"  {i}. ↘ {stop['name']}: -{stop['delivery']}대 (적재: {stop['current_load']})")
             else:
-                print(f"  {i}. 📍 {stop['name']}")
+                print(f"  {i}.  {stop['name']}")
 
 # ---------------------------------------------------------------------------
-# 9. 메인 실행 함수 (수정)
+# 9. 메인 실행 함수 
 # ---------------------------------------------------------------------------
 def main():
     """통합 재배치 시스템 메인 함수"""
     
     print("\n" + "="*70)
     print(" "*20 + "서울시 따릉이 통합 재배치 시스템")
-    print(" "*20 + "🆕 클러스터링 기반 최적화")
+    print(" "*20 + " 클러스터링 기반 최적화")
     print(" "*25 + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*70)
     
@@ -839,7 +839,7 @@ def main():
                 capacity = int(input("트럭 용량 (기본: 20): ") or 20)
                 
                 if choice == '1':
-                    # 🆕 클러스터링 기반 해결
+                    # 클러스터링 기반 해결
                     solution = solve_district_with_clustering(
                         district, analysis, num_vehicles, capacity
                     )
