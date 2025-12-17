@@ -41,8 +41,8 @@
 
 ### 1. 저장소 클론
 ```bash
-git clone https://github.com/yourusername/bicycle_reallocation_final2.git
-cd bicycle_reallocation_final2
+git clone https://github.com/yourusername/bicycle_reallocation_final.git
+cd bicycle_reallocation_final
 ```
 
 ### 2. 가상환경 설정 (권장)
@@ -119,7 +119,7 @@ urgency_score = (
 
 ## 🗂 프로젝트 구조
 ```
-bicycle_reallocation_final2/
+bicycle_reallocation_final/
 ├── app_new.py              # Flask 웹 애플리케이션
 ├── reallocation_final.py   # 핵심 최적화 로직
 ├── templates/
