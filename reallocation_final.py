@@ -15,13 +15,34 @@ from shapely.geometry import shape, Point
 warnings.filterwarnings('ignore')
 
 # ---------------------------------------------------------------------------
+# 0. 공통 유틸리티 함수
+# ---------------------------------------------------------------------------
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """두 지점 간 거리 계산 (km) - Haversine 공식"""
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+# ---------------------------------------------------------------------------
 # 1. GeoJSON 기반 구 분류기 
 # ---------------------------------------------------------------------------
 class SeoulDistrictClassifier:
     """서울시 구 분류기 (GeoJSON 활용)"""
+    _polygons_cache = {}
+    _centers_cache = {}
+
     def __init__(self):
-        self.district_polygons = {}
-        self.load_geojson()
+        # 데이터가 캐시되어 있지 않으면 로드
+        if not SeoulDistrictClassifier._polygons_cache:
+            self.load_geojson()
+        
+        # 캐시된 데이터 참조
+        self.district_polygons = SeoulDistrictClassifier._polygons_cache
+        self.district_centers = SeoulDistrictClassifier._centers_cache
     
     def load_geojson(self):
         """GeoJSON 데이터 로드 (온라인 또는 로컬)"""
@@ -31,20 +52,18 @@ class SeoulDistrictClassifier:
         
         # 파일이 없으면 다운로드
         if not os.path.exists(geojson_file):
-            print(f"📥 GeoJSON 파일 다운로드 중... ({geojson_url})")
+            print(f"GeoJSON 파일 다운로드 중... ({geojson_url})")
             try:
                 response = requests.get(geojson_url)
                 if response.status_code == 200:
                     with open(geojson_file, 'w', encoding='utf-8') as f:
                         f.write(response.text)
-                    print("✓ 다운로드 완료")
+                    print("다운로드 완료")
                 else:
-                    print(f"⚠ 다운로드 실패: {response.status_code}")
+                    print(f"다운로드 실패: {response.status_code}")
             except Exception as e:
-                print(f"⚠ 다운로드 오류: {e}")
+                print(f"다운로드 오류: {e}")
 
-        self.district_polygons = {}
-        self.district_centers = {}
         if os.path.exists(geojson_file):
             try:
                 with open(geojson_file, 'r', encoding='utf-8') as f:
@@ -52,7 +71,7 @@ class SeoulDistrictClassifier:
                 
                 # 영어 이름 -> 한글 이름 매핑
                 # GeoJSON 파일의 'name' 속성이 영어(예: Gangnam-gu)로만 제공되므로
-                # 시스템 내부의 한글 이름(예: 강남구)과 일치시키기 위해 매핑이 필요합니다.
+                # 시스템 내부의 한글 이름(예: 강남구)과 일치시키기 위해 매핑이 필요.
                 name_map = {
                     'Gangnam-gu': '강남구', 'Gangdong-gu': '강동구', 'Gangbuk-gu': '강북구', 
                     'Gangseo-gu': '강서구', 'Gwanak-gu': '관악구', 'Gwangjin-gu': '광진구', 
@@ -69,11 +88,11 @@ class SeoulDistrictClassifier:
                     eng_name = feature['properties']['name']
                     kor_name = name_map.get(eng_name, eng_name)
                     polygon = shape(feature['geometry'])
-                    self.district_polygons[kor_name] = polygon
+                    SeoulDistrictClassifier._polygons_cache[kor_name] = polygon
                     # 폴리곤의 중심점(Centroid)을 계산하여 차고지/지도 중심점으로 사용
-                    self.district_centers[kor_name] = (polygon.centroid.y, polygon.centroid.x)
+                    SeoulDistrictClassifier._centers_cache[kor_name] = (polygon.centroid.y, polygon.centroid.x)
                     
-                print(f"✓ GeoJSON 로드 완료: {len(self.district_polygons)}개 구")
+                print(f"✓ GeoJSON 로드 완료: {len(SeoulDistrictClassifier._polygons_cache)}개 구")
             except Exception as e:
                 print(f"⚠ GeoJSON 파싱 오류: {e}")
     
@@ -195,10 +214,7 @@ class BikeStationClusterer:
             
             for delivery_key, delivery_data in delivery_centers.items():
                 if delivery_key not in used_delivery:
-                    dist = self._calculate_distance(
-                        pickup_data['center'][0], pickup_data['center'][1],
-                        delivery_data['center'][0], delivery_data['center'][1]
-                    )
+                    dist = calculate_distance(*pickup_data['center'], *delivery_data['center'])
                     if dist < min_dist:
                         min_dist = dist
                         closest_delivery = delivery_key
@@ -227,15 +243,6 @@ class BikeStationClusterer:
         
         return final_clusters
     
-    def _calculate_distance(self, lat1, lon1, lat2, lon2):
-        """두 지점 간 거리 계산 (km)"""
-        R = 6371
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c
 
 # ---------------------------------------------------------------------------
 # 3. 데이터 수집 및 구별 분류 
@@ -248,7 +255,7 @@ def get_bike_station_data_by_district(api_key):
     print("="*70)
     
     all_stations = []
-    for start_index in [1, 1001, 2001]:
+    for start_index in range(1, 4001, 1000):  # 4000번대까지 여유있게 조회
         end_index = start_index + 999
         url = f"http://openapi.seoul.go.kr:8088/{api_key}/json/bikeList/{start_index}/{end_index}/"
         try:
@@ -441,25 +448,7 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
     # 문제 실행 가능성 체크
     total_pickup = sum(s.get('pickup', 0) for s in stations)
     total_delivery = sum(s.get('delivery', 0) for s in stations)
-    '''
-    # 만약 수거량이나 배송량이 트럭 용량을 크게 초과하면 바로 휴리스틱 사용
-    if total_pickup > vehicle_capacity * num_vehicles * 2 or total_delivery > vehicle_capacity * num_vehicles * 2:
-        print(f"  ⚠ 문제 규모가 너무 큼 (수거: {total_pickup}, 배송: {total_delivery})")
-        classifier = SeoulDistrictClassifier()
-        actual_district = district_name.split('_')[0] if '_' in district_name else district_name
-        if actual_district in classifier.district_centers:
-            depot_lat, depot_lon = classifier.district_centers[actual_district]
-        else:
-            depot_lat = np.mean([s['lat'] for s in stations])
-            depot_lon = np.mean([s['lon'] for s in stations])
-        
-        depot = {
-            'name': f'{actual_district} 차고지',
-            'lat': depot_lat,
-            'lon': depot_lon
-        }
-        return solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot)
-    '''
+
     # 구별 고정 차고지 사용
     classifier = SeoulDistrictClassifier()
     
@@ -660,14 +649,6 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
 def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot):
     """'최단 근접 이웃' 기반의 휴리스틱 해법"""
 
-    def haversine_km(lat1, lon1, lat2, lon2):
-        R = 6371
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        d_phi = math.radians(lat2 - lat1)
-        d_lambda = math.radians(lon2 - lon1)
-        a = math.sin(d_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(d_lambda/2)**2
-        return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
-
     routes = []
     total_distance = 0
     unvisited_stations = stations[:]
@@ -695,7 +676,7 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
                 # 용량 제약 조건 확인
                 if (is_pickup and current_load + s['pickup'] <= vehicle_capacity) or \
                    (not is_pickup and current_load >= s['delivery']):
-                    dist = haversine_km(current_pos['lat'], current_pos['lon'], s['lat'], s['lon'])
+                    dist = calculate_distance(current_pos['lat'], current_pos['lon'], s['lat'], s['lon'])
                     candidates.append((dist, s))
             
             # 더 이상 방문할 곳이 없으면 종료
@@ -724,7 +705,7 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
             unvisited_stations.remove(next_station)
 
         # 차고지로 복귀
-        dist_to_depot = haversine_km(current_pos['lat'], current_pos['lon'], depot['lat'], depot['lon'])
+        dist_to_depot = calculate_distance(current_pos['lat'], current_pos['lon'], depot['lat'], depot['lon'])
         route['distance'] += dist_to_depot * 1000
         
         route['path'].append({
