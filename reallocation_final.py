@@ -2,6 +2,7 @@ import requests
 import json
 import math
 import time
+import os
 from collections import defaultdict
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
@@ -10,6 +11,7 @@ from datetime import datetime
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import warnings
+from shapely.geometry import shape, Point
 warnings.filterwarnings('ignore')
 
 # ---------------------------------------------------------------------------
@@ -23,67 +25,65 @@ class SeoulDistrictClassifier:
     
     def load_geojson(self):
         """GeoJSON 데이터 로드 (온라인 또는 로컬)"""
-        self.district_bounds = {
-            '강남구': {'min_lat': 37.4687, 'max_lat': 37.5687, 'min_lon': 127.0164, 'max_lon': 127.0964},
-            '강동구': {'min_lat': 37.5201, 'max_lat': 37.5501, 'min_lon': 127.1138, 'max_lon': 127.1438},
-            '강북구': {'min_lat': 37.6296, 'max_lat': 37.6596, 'min_lon': 127.0157, 'max_lon': 127.0457},
-            '강서구': {'min_lat': 37.5409, 'max_lat': 37.5709, 'min_lon': 126.8295, 'max_lon': 126.8795},
-            '관악구': {'min_lat': 37.4684, 'max_lat': 37.4984, 'min_lon': 126.9416, 'max_lon': 126.9716},
-            '광진구': {'min_lat': 37.5284, 'max_lat': 37.5584, 'min_lon': 127.0722, 'max_lon': 127.1022},
-            '구로구': {'min_lat': 37.4854, 'max_lat': 37.5154, 'min_lon': 126.8774, 'max_lon': 126.9074},
-            '금천구': {'min_lat': 37.4467, 'max_lat': 37.4767, 'min_lon': 126.8854, 'max_lon': 126.9154},
-            '노원구': {'min_lat': 37.6442, 'max_lat': 37.6742, 'min_lon': 127.0468, 'max_lon': 127.0768},
-            '도봉구': {'min_lat': 37.6587, 'max_lat': 37.6887, 'min_lon': 127.0371, 'max_lon': 127.0671},
-            '동대문구': {'min_lat': 37.5644, 'max_lat': 37.5944, 'min_lon': 127.0299, 'max_lon': 127.0599},
-            '동작구': {'min_lat': 37.5024, 'max_lat': 37.5324, 'min_lon': 126.9293, 'max_lon': 126.9593},
-            '마포구': {'min_lat': 37.5537, 'max_lat': 37.5837, 'min_lon': 126.8987, 'max_lon': 126.9287},
-            '서대문구': {'min_lat': 37.5691, 'max_lat': 37.5991, 'min_lon': 126.9268, 'max_lon': 126.9568},
-            '서초구': {'min_lat': 37.4737, 'max_lat': 37.5037, 'min_lon': 127.0225, 'max_lon': 127.0525},
-            '성동구': {'min_lat': 37.5533, 'max_lat': 37.5833, 'min_lon': 127.0269, 'max_lon': 127.0569},
-            '성북구': {'min_lat': 37.5794, 'max_lat': 37.6094, 'min_lon': 127.0067, 'max_lon': 127.0367},
-            '송파구': {'min_lat': 37.5046, 'max_lat': 37.5346, 'min_lon': 127.0950, 'max_lon': 127.1250},
-            '양천구': {'min_lat': 37.5067, 'max_lat': 37.5367, 'min_lon': 126.8565, 'max_lon': 126.8865},
-            '영등포구': {'min_lat': 37.5164, 'max_lat': 37.5464, 'min_lon': 126.8863, 'max_lon': 126.9163},
-            '용산구': {'min_lat': 37.5284, 'max_lat': 37.5584, 'min_lon': 126.9554, 'max_lon': 126.9854},
-            '은평구': {'min_lat': 37.6076, 'max_lat': 37.6376, 'min_lon': 126.9127, 'max_lon': 126.9427},
-            '종로구': {'min_lat': 37.5635, 'max_lat': 37.5935, 'min_lon': 126.9691, 'max_lon': 126.9991},
-            '중구': {'min_lat': 37.5540, 'max_lat': 37.5840, 'min_lon': 126.9879, 'max_lon': 127.0179},
-            '중랑구': {'min_lat': 37.5963, 'max_lat': 37.6263, 'min_lon': 127.0825, 'max_lon': 127.1125}
-        }
+        # GeoJSON 파일 설정
+        geojson_url = "https://raw.githubusercontent.com/southkorea/seoul-maps/master/kostat/2013/json/seoul_municipalities_geo_simple.json"
+        geojson_file = "seoul_municipalities_geo_simple.json"
         
-        self.district_centers = {
-            '강남구': (37.5172, 127.0473), '강동구': (37.5301, 127.1238),
-            '강북구': (37.6396, 127.0257), '강서구': (37.5509, 126.8495),
-            '관악구': (37.4784, 126.9516), '광진구': (37.5384, 127.0822),
-            '구로구': (37.4954, 126.8874), '금천구': (37.4567, 126.8954),
-            '노원구': (37.6542, 127.0568), '도봉구': (37.6687, 127.0471),
-            '동대문구': (37.5744, 127.0399), '동작구': (37.5124, 126.9393),
-            '마포구': (37.5637, 126.9087), '서대문구': (37.5791, 126.9368),
-            '서초구': (37.4837, 127.0325), '성동구': (37.5633, 127.0369),
-            '성북구': (37.5894, 127.0167), '송파구': (37.5146, 127.1050),
-            '양천구': (37.5167, 126.8665), '영등포구': (37.5264, 126.8963),
-            '용산구': (37.5384, 126.9654), '은평구': (37.6176, 126.9227),
-            '종로구': (37.5735, 126.9791), '중구': (37.5640, 126.9979),
-            '중랑구': (37.6063, 127.0925)
-        }
+        # 파일이 없으면 다운로드
+        if not os.path.exists(geojson_file):
+            print(f"📥 GeoJSON 파일 다운로드 중... ({geojson_url})")
+            try:
+                response = requests.get(geojson_url)
+                if response.status_code == 200:
+                    with open(geojson_file, 'w', encoding='utf-8') as f:
+                        f.write(response.text)
+                    print("✓ 다운로드 완료")
+                else:
+                    print(f"⚠ 다운로드 실패: {response.status_code}")
+            except Exception as e:
+                print(f"⚠ 다운로드 오류: {e}")
+
+        self.district_polygons = {}
+        self.district_centers = {}
+        if os.path.exists(geojson_file):
+            try:
+                with open(geojson_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # 영어 이름 -> 한글 이름 매핑
+                # GeoJSON 파일의 'name' 속성이 영어(예: Gangnam-gu)로만 제공되므로
+                # 시스템 내부의 한글 이름(예: 강남구)과 일치시키기 위해 매핑이 필요합니다.
+                name_map = {
+                    'Gangnam-gu': '강남구', 'Gangdong-gu': '강동구', 'Gangbuk-gu': '강북구', 
+                    'Gangseo-gu': '강서구', 'Gwanak-gu': '관악구', 'Gwangjin-gu': '광진구', 
+                    'Guro-gu': '구로구', 'Geumcheon-gu': '금천구', 'Nowon-gu': '노원구', 
+                    'Dobong-gu': '도봉구', 'Dongdaemun-gu': '동대문구', 'Dongjak-gu': '동작구', 
+                    'Mapo-gu': '마포구', 'Seodaemun-gu': '서대문구', 'Seocho-gu': '서초구', 
+                    'Seongdong-gu': '성동구', 'Seongbuk-gu': '성북구', 'Songpa-gu': '송파구', 
+                    'Yangcheon-gu': '양천구', 'Yeongdeungpo-gu': '영등포구', 'Yongsan-gu': '용산구', 
+                    'Eunpyeong-gu': '은평구', 'Jongno-gu': '종로구', 'Jung-gu': '중구', 
+                    'Jungnang-gu': '중랑구'
+                }
+                
+                for feature in data['features']:
+                    eng_name = feature['properties']['name']
+                    kor_name = name_map.get(eng_name, eng_name)
+                    polygon = shape(feature['geometry'])
+                    self.district_polygons[kor_name] = polygon
+                    # 폴리곤의 중심점(Centroid)을 계산하여 차고지/지도 중심점으로 사용
+                    self.district_centers[kor_name] = (polygon.centroid.y, polygon.centroid.x)
+                    
+                print(f"✓ GeoJSON 로드 완료: {len(self.district_polygons)}개 구")
+            except Exception as e:
+                print(f"⚠ GeoJSON 파싱 오류: {e}")
     
     def find_district(self, lat, lon):
         """좌표가 속한 구를 찾습니다"""
-        for district, bounds in self.district_bounds.items():
-            if (bounds['min_lat'] <= lat <= bounds['max_lat'] and 
-                bounds['min_lon'] <= lon <= bounds['max_lon']):
+        point = Point(lon, lat)
+        for district, polygon in self.district_polygons.items():
+            if polygon.contains(point):
                 return district
-        
-        min_distance = float('inf')
-        closest_district = None
-        
-        for district, (center_lat, center_lon) in self.district_centers.items():
-            distance = math.sqrt((lat - center_lat)**2 + (lon - center_lon)**2)
-            if distance < min_distance:
-                min_distance = distance
-                closest_district = district
-        
-        return closest_district
+        return None
 
 # ---------------------------------------------------------------------------
 # 2. 클러스터링 모듈
