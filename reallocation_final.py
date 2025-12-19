@@ -781,7 +781,7 @@ def main():
     print(" "*25 + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*70)
     
-    API_KEY = "6464716442737069363863566b466c"
+    API_KEY = "your_api_key"
     
     # 1. 데이터 수집 및 구별 분류
     district_stations = get_bike_station_data_by_district(API_KEY)
