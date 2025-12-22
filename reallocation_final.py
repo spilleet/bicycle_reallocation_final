@@ -92,9 +92,9 @@ class SeoulDistrictClassifier:
                     # 폴리곤의 중심점(Centroid)을 계산하여 차고지/지도 중심점으로 사용
                     SeoulDistrictClassifier._centers_cache[kor_name] = (polygon.centroid.y, polygon.centroid.x)
                     
-                print(f"✓ GeoJSON 로드 완료: {len(SeoulDistrictClassifier._polygons_cache)}개 구")
+                print(f"GeoJSON 로드 완료: {len(SeoulDistrictClassifier._polygons_cache)}개 구")
             except Exception as e:
-                print(f"⚠ GeoJSON 파싱 오류: {e}")
+                print(f"GeoJSON 파싱 오류: {e}")
     
     def find_district(self, lat, lon):
         """좌표가 속한 구를 찾습니다"""
@@ -127,7 +127,7 @@ class BikeStationClusterer:
             elif station.get('delivery', 0) > 0:
                 delivery_stations.append(station)
         
-        print(f"\n 클러스터링 시작:")
+        print(f"\n클러스터링 시작:")
         print(f"  - 수거 필요: {len(pickup_stations)}개")
         print(f"  - 배송 필요: {len(delivery_stations)}개")
         print(f"  - 트럭 수: {self.num_vehicles}대")
@@ -266,7 +266,7 @@ def get_bike_station_data_by_district(api_key):
         except:
             continue
     
-    print(f"✓ 총 {len(all_stations)}개 대여소 데이터 수집 완료")
+    print(f"총 {len(all_stations)}개 대여소 데이터 수집 완료")
     
     classifier = SeoulDistrictClassifier()
     district_stations = defaultdict(list)
@@ -283,7 +283,7 @@ def get_bike_station_data_by_district(api_key):
         except:
             continue
     
-    print(f"✓ {len(district_stations)}개 구로 분류 완료")
+    print(f"{len(district_stations)}개 구로 분류 완료")
     
     for district, stations in sorted(district_stations.items()):
         print(f"  - {district}: {len(stations)}개 대여소")
@@ -379,9 +379,9 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
         return None
     
     print(f"\n{'='*70}")
-    print(f" {district_name} 클러스터링 기반 최적화")
+    print(f"{district_name} 클러스터링 기반 최적화")
     print(f"{'='*70}")
-    print(f" 문제 크기: {len(problem_stations)}개 대여소")
+    print(f"문제 크기: {len(problem_stations)}개 대여소")
     
     # Debug: Check if stations have coordinates
     print(f"\n[DEBUG] First station data: {problem_stations[0] if problem_stations else 'No stations'}")
@@ -406,7 +406,7 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
         if not cluster_stations:
             continue
         
-        print(f"\n📦 클러스터 {i+1}/{len(clusters)} 처리 중...")
+        print(f"\n클러스터 {i+1}/{len(clusters)} 처리 중...")
         print(f"[DEBUG] Cluster {i+1} has {len(cluster_stations)} stations")
         
         # 단일 트럭으로 클러스터 해결
@@ -477,21 +477,12 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
     deliveries = [0] + [s.get('delivery', 0) for s in stations]
     
     # 거리 행렬 계산
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return int(R * c * 1000)
-    
     distance_matrix = []
     for from_node in nodes:
         row = []
         for to_node in nodes:
-            dist = haversine(from_node['lat'], from_node['lon'],
-                           to_node['lat'], to_node['lon'])
+            dist = int(calculate_distance(from_node['lat'], from_node['lon'],
+                           to_node['lat'], to_node['lon']) * 1000)
             row.append(dist)
         distance_matrix.append(row)
     
@@ -557,16 +548,16 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
     search_parameters.time_limit.FromSeconds(30)  # 10초로 제한
     
     # 문제 해결
-    print(f"  🔄 OR-Tools 시도 중... (최대 30초)")
+    print(f"  OR-Tools 시도 중... (최대 30초)")
     solution = routing.SolveWithParameters(search_parameters)
     
     if solution:
         result = extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles)
         result['method'] = 'OR-Tools'
-        print(f"   OR-Tools로 경로 생성 성공")
+        print(f"  OR-Tools로 경로 생성 성공")
         return result
     else:
-        print(f"  ⚠ OR-Tools 실패, 휴리스틱 사용")
+        print(f"  OR-Tools 실패, 휴리스틱 사용")
         result = solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot)
         result['method'] = 'Heuristic'
         return result
@@ -731,15 +722,15 @@ def print_district_solution(district_name, solution):
     # 해결 방법 표시
     if solution:
         if solution.get('clustering_used'):
-            print(f"🔧 클러스터링 사용: {solution.get('num_clusters', 0)}개 클러스터")
+            print(f"클러스터링 사용: {solution.get('num_clusters', 0)}개 클러스터")
             if 'solution_methods' in solution:
                 methods = solution.get('solution_methods', [])
                 or_tools_count = methods.count('OR-Tools')
                 heuristic_count = methods.count('Heuristic')
-                print(f"📊 해결 방법: OR-Tools {or_tools_count}개, Heuristic {heuristic_count}개")
+                print(f"해결 방법: OR-Tools {or_tools_count}개, Heuristic {heuristic_count}개")
         else:
             method = solution.get('method', 'Unknown')
-            print(f"🔧 해결 방법: {method}")
+            print(f"해결 방법: {method}")
     
     print(f"{'='*70}")
     
@@ -749,11 +740,11 @@ def print_district_solution(district_name, solution):
     
     # 총 거리 표시
     if solution.get('total_distance', 0) > 0:
-        print(f"\n📏 총 이동 거리: {solution['total_distance']/1000:.2f}km")
+        print(f"\n총 이동 거리: {solution['total_distance']/1000:.2f}km")
     
     for route in solution['routes']:
         cluster_info = f" (클러스터 {route.get('cluster_id')})" if 'cluster_id' in route else ""
-        print(f"\n🚚 트럭 {route['vehicle_id'] + 1}번{cluster_info}")
+        print(f"\n트럭 {route['vehicle_id'] + 1}번{cluster_info}")
         
         if route['distance'] > 0:
             print(f"이동 거리: {route['distance']/1000:.2f}km")
@@ -763,11 +754,11 @@ def print_district_solution(district_name, solution):
         
         for i, stop in enumerate(route['path']):
             if stop['pickup'] > 0:
-                print(f"  {i}. ↗ {stop['name']}: +{stop['pickup']}대 (적재: {stop['current_load']})")
+                print(f"  {i}. 수거 {stop['name']}: +{stop['pickup']}대 (적재: {stop['current_load']})")
             elif stop['delivery'] > 0:
-                print(f"  {i}. ↘ {stop['name']}: -{stop['delivery']}대 (적재: {stop['current_load']})")
+                print(f"  {i}. 배송 {stop['name']}: -{stop['delivery']}대 (적재: {stop['current_load']})")
             else:
-                print(f"  {i}.  {stop['name']}")
+                print(f"  {i}. {stop['name']}")
 
 # ---------------------------------------------------------------------------
 # 9. 메인 실행 함수 
@@ -777,7 +768,7 @@ def main():
     
     print("\n" + "="*70)
     print(" "*20 + "서울시 따릉이 통합 재배치 시스템")
-    print(" "*20 + " 클러스터링 기반 최적화")
+    print(" "*20 + "클러스터링 기반 최적화")
     print(" "*25 + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*70)
     
@@ -841,7 +832,7 @@ def main():
                         filename = f"{district}_redistribution_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                         with open(filename, 'w', encoding='utf-8') as f:
                             json.dump(solution, f, ensure_ascii=False, indent=2)
-                        print(f"✓ {filename}에 저장되었습니다.")
+                        print(f"{filename}에 저장되었습니다.")
         except Exception as e:
             print(f"오류 발생: {e}")
     
