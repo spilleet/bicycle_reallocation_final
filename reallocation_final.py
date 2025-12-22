@@ -14,9 +14,9 @@ import warnings
 from shapely.geometry import shape, Point
 warnings.filterwarnings('ignore')
 
-# ---------------------------------------------------------------------------
+# -----------------
 # 0. 공통 유틸리티 함수
-# ---------------------------------------------------------------------------
+# -----------------
 def calculate_distance(lat1, lon1, lat2, lon2):
     """두 지점 간 거리 계산 (km) - Haversine 공식"""
     R = 6371
@@ -27,9 +27,10 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
-# ---------------------------------------------------------------------------
+# ----------------------
 # 1. GeoJSON 기반 구 분류기 
-# ---------------------------------------------------------------------------
+# ----------------------
+
 class SeoulDistrictClassifier:
     """서울시 구 분류기 (GeoJSON 활용)"""
     _polygons_cache = {}
@@ -104,9 +105,9 @@ class SeoulDistrictClassifier:
                 return district
         return None
 
-# ---------------------------------------------------------------------------
+# ----------------
 # 2. 클러스터링 모듈
-# ---------------------------------------------------------------------------
+# ----------------
 class BikeStationClusterer:
     """따릉이 대여소 클러스터링"""
     
@@ -244,9 +245,9 @@ class BikeStationClusterer:
         return final_clusters
     
 
-# ---------------------------------------------------------------------------
+# ----------------------
 # 3. 데이터 수집 및 구별 분류 
-# ---------------------------------------------------------------------------
+# ----------------------
 def get_bike_station_data_by_district(api_key):
     """따릉이 데이터를 수집하고 구별로 분류합니다"""
     
@@ -290,9 +291,9 @@ def get_bike_station_data_by_district(api_key):
     
     return district_stations
 
-# ---------------------------------------------------------------------------
+# ----------------
 # 4. 구별 재배치 분석 
-# ---------------------------------------------------------------------------
+# ----------------
 def analyze_district_redistribution_needs(district_stations):
     """구별 재배치 필요도를 분석합니다"""
     
@@ -367,9 +368,9 @@ def analyze_district_redistribution_needs(district_stations):
     
     return district_analysis
 
-# ---------------------------------------------------------------------------
-# 🆕 5. 클러스터 기반 OR-Tools 최적화
-# ---------------------------------------------------------------------------
+# ------------------------------
+# 5. 클러스터 기반 OR-Tools 최적화
+# ------------------------------
 def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehicle_capacity=20):
     """클러스터링 기반 구별 재배치 최적화"""
     
@@ -406,7 +407,7 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
         if not cluster_stations:
             continue
         
-        print(f"\n📦 클러스터 {i+1}/{len(clusters)} 처리 중...")
+        print(f"\n 클러스터 {i+1}/{len(clusters)} 처리 중...")
         print(f"[DEBUG] Cluster {i+1} has {len(cluster_stations)} stations")
         
         # 단일 트럭으로 클러스터 해결
@@ -436,7 +437,7 @@ def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehi
     }
 
 def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, vehicle_capacity=20, cluster_id=None):
-    """단일 클러스터에 대한 OR-Tools 최적화 (개선된 버전)"""
+    """단일 클러스터에 대한 OR-Tools 최적화"""
     
     if not stations:
         return None
@@ -571,9 +572,9 @@ def solve_single_cluster_with_ortools(district_name, stations, num_vehicles=1, v
         result['method'] = 'Heuristic'
         return result
 
-# ---------------------------------------------------------------------------
+# --------------------
 # 6. 솔루션 추출 및 포맷팅 
-# ---------------------------------------------------------------------------
+# --------------------
 def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num_vehicles):
     """OR-Tools 솔루션에서 경로 정보를 추출합니다"""
     
@@ -643,9 +644,9 @@ def extract_solution(manager, routing, solution, nodes, pickups, deliveries, num
         'total_distance': total_distance
     }
 
-# ---------------------------------------------------------------------------
+# -------------
 # 7. 휴리스틱 솔버 
-# ---------------------------------------------------------------------------
+# -------------
 def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity, depot):
     """'최단 근접 이웃' 기반의 휴리스틱 해법"""
 
@@ -719,9 +720,9 @@ def solve_with_heuristic(district_name, stations, num_vehicles, vehicle_capacity
 
     print(f"  휴리스틱(최단 근접)으로 경로 생성 완료")
     return {'routes': routes, 'total_distance': total_distance, 'method': 'Heuristic'}
-# ---------------------------------------------------------------------------
+# -----------
 # 8. 결과 출력 
-# ---------------------------------------------------------------------------
+# -----------
 def print_district_solution(district_name, solution):
     """구별 솔루션을 보기 좋게 출력합니다"""
     
@@ -749,11 +750,11 @@ def print_district_solution(district_name, solution):
     
     # 총 거리 표시
     if solution.get('total_distance', 0) > 0:
-        print(f"\n📏 총 이동 거리: {solution['total_distance']/1000:.2f}km")
+        print(f"\n 총 이동 거리: {solution['total_distance']/1000:.2f}km")
     
     for route in solution['routes']:
         cluster_info = f" (클러스터 {route.get('cluster_id')})" if 'cluster_id' in route else ""
-        print(f"\n🚚 트럭 {route['vehicle_id'] + 1}번{cluster_info}")
+        print(f"\n 트럭 {route['vehicle_id'] + 1}번{cluster_info}")
         
         if route['distance'] > 0:
             print(f"이동 거리: {route['distance']/1000:.2f}km")
@@ -769,9 +770,9 @@ def print_district_solution(district_name, solution):
             else:
                 print(f"  {i}.  {stop['name']}")
 
-# ---------------------------------------------------------------------------
+# ---------------
 # 9. 메인 실행 함수 
-# ---------------------------------------------------------------------------
+# ---------------
 def main():
     """통합 재배치 시스템 메인 함수"""
     
