@@ -368,7 +368,7 @@ def analyze_district_redistribution_needs(district_stations):
     return district_analysis
 
 # ---------------------------------------------------------------------------
-# 🆕 5. 클러스터 기반 OR-Tools 최적화
+# 5. 클러스터 기반 OR-Tools 최적화
 # ---------------------------------------------------------------------------
 def solve_district_with_clustering(district_name, analysis, num_vehicles=2, vehicle_capacity=20):
     """클러스터링 기반 구별 재배치 최적화"""
